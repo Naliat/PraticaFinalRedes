@@ -149,6 +149,29 @@ class DouradoGame:
                     self.game_end_time.strftime("%Y-%m-%d %H:%M:%S")
                 ])
 
+def get_local_ip():
+    """Obtém o IP local da máquina."""
+    try:
+        # Cria um socket UDP e conecta a um IP externo para descobrir o IP local
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))  # Conecta ao Google DNS
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except Exception:
+        return '127.0.0.1'  # Retorna localhost se não conseguir obter o IP
+
+def udp_broadcast_listener():
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    udp_socket.bind(('', 12346))  # Escuta na porta 12346
+    while True:
+        data, addr = udp_socket.recvfrom(1024)
+        if data.decode().strip() == "DISCOVER":
+            local_ip = get_local_ip()  # Obtém o IP local
+            udp_socket.sendto(local_ip.encode(), addr)  # Responde com o IP local
+
 def handle_client(client_socket, game):
     try:
         # Primeiro: solicita o nome do jogador
@@ -224,8 +247,10 @@ def handle_client(client_socket, game):
 def server():
     game = DouradoGame()
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('localhost', 12345))
+    server_socket.bind(('0.0.0.0', 12345))  # Escuta em todas as interfaces
     server_socket.listen(4)
+    # Inicia a thread do UDP
+    threading.Thread(target=udp_broadcast_listener, daemon=True).start()
     print("Servidor iniciado e aguardando conexões...")
     
     while True:
