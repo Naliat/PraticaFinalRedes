@@ -21,6 +21,12 @@ def choose_game_mode():
     return int(choice)
 
 def discover_server():
+    # Exibe o IP do computador para conexão manual
+    hostname = socket.getfqdn()
+    local_ips = socket.gethostbyname_ex(hostname)[2]
+    print(f"Seu IP: {local_ips}")
+    print("Caso a descoberta automática falhe, use um desses IPs no cliente remoto.")
+    
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     udp_socket.settimeout(5)  # Timeout de 5 segundos
@@ -30,31 +36,28 @@ def discover_server():
         data, addr = udp_socket.recvfrom(1024)
         server_ip = data.decode().strip()
     except socket.timeout:
-        print("Não foi possível encontrar o servidor na rede.")
-        exit()
+        print("Não foi possível encontrar o servidor automaticamente.")
+        server_ip = input("Digite o IP do servidor manualmente: ").strip()
     finally:
         udp_socket.close()
     return server_ip
 
 def client():
-    server_ip = discover_server()  # Descobre o IP do servidor
+    server_ip = discover_server()
     print(f"Conectando ao servidor em {server_ip}...")
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((server_ip, 12345))  # Conecta ao IP descoberto
+    client_socket.connect((server_ip, 12345))
 
-    # Envia a escolha do modo para o servidor
     game_mode = choose_game_mode()
     client_socket.send(str(game_mode).encode())
 
-    # Inicia uma thread para receber mensagens do servidor
     threading.Thread(target=receive_messages, args=(client_socket,), daemon=True).start()
 
-    # Loop principal: envia as entradas do usuário para o servidor
     while True:
         try:
-            user_input = input()  # Aguarda o usuário digitar
+            user_input = input()
             if user_input.strip().lower() == "sair":
-                client_socket.send("3".encode())  # Envia opção de sair
+                client_socket.send("3".encode())
                 break
             else:
                 client_socket.send(user_input.encode())
