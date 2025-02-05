@@ -26,8 +26,7 @@ class DouradoGame:
         suits = ['Ouros', 'Espadas', 'Copas', 'Paus']
         values = ['4', '5', '6', '7', 'Q', 'J', 'K', 'A', '2', '3']
         if self.mode == 20:
-            # Para 20 cartas: usa somente K, J, Q, A (16 cartas) + extras:
-            # 3 de Espadas, 3 de Paus, 2 de Paus e 2 de Espadas
+            # Para 20 cartas: usa somente K, J, Q, A + extras:
             deck = [card for card in [(value, suit) for suit in suits for value in values]
                     if card[0] in ['K', 'J', 'Q', 'A']]
             extras = [('3', 'Espadas'), ('3', 'Paus'), ('2', 'Paus'), ('2', 'Espadas')]
@@ -91,19 +90,20 @@ class DouradoGame:
 
     def play_step(self, player_index, chosen_card):
         """
-        Executa uma rodada. O jogador que enviar sua jogada manualmente informa sua carta
-        no formato, por exemplo, 'Qe' para Q de Espadas.
-        Se singleplayer, os demais jogadores jogam automaticamente.
-        Em multiplayer, cada cliente deverá enviar sua jogada.
+        Executa uma rodada. O jogador envia sua jogada informando a carta no formato, por exemplo, 'Qe'
+        para Q de Espadas. Se o jogador digitar 'auto', a carta será escolhida aleatoriamente.
         """
         card_map = {'O': 'Ouros', 'E': 'Espadas', 'C': 'Copas', 'P': 'Paus'}
-        if len(chosen_card) < 2:
-            raise ValueError("Formato de carta inválido.")
-        chosen_card_tuple = (chosen_card[0].upper(), card_map.get(chosen_card[1].upper()))
-        if not chosen_card_tuple[1]:
-            raise ValueError(f"Naipe inválido: {chosen_card[1]}")
-        if chosen_card_tuple not in self.hands[player_index]:
-            raise ValueError(f"A carta {chosen_card_tuple} não está na sua mão.")
+        if chosen_card.lower() == 'auto':
+            chosen_card_tuple = random.choice(self.hands[player_index])
+        else:
+            if len(chosen_card) < 2:
+                raise ValueError("Formato de carta inválido.")
+            chosen_card_tuple = (chosen_card[0].upper(), card_map.get(chosen_card[1].upper()))
+            if not chosen_card_tuple[1]:
+                raise ValueError(f"Naipe inválido: {chosen_card[1]}")
+            if chosen_card_tuple not in self.hands[player_index]:
+                raise ValueError(f"A carta {chosen_card_tuple} não está na sua mão.")
         self.hands[player_index].remove(chosen_card_tuple)
         current_round = [None] * 4
         current_round[player_index] = chosen_card_tuple
@@ -149,16 +149,18 @@ class DouradoGame:
                     self.game_end_time.strftime("%Y-%m-%d %H:%M:%S")
                 ])
 
+    def get_hand(self, player_index):
+        return str(self.hands[player_index])
+
 def handle_client(client_socket, game):
     try:
-        # Primeiro: solicita o nome do jogador
+        # Solicita o nome do jogador
         client_socket.send("Digite seu nome: ".encode())
         player_name = client_socket.recv(1024).decode().strip()
         game.add_player(client_socket, player_name)
         
-        # Se for o primeiro cliente, exibe o menu para definir modo e modalidade
+        # Se for o primeiro cliente, define modo e modalidade
         if len(game.players) == 1:
-            # Solicita o modo de jogo
             menu = ("Escolha o modo de jogo:\n"
                     "1. Jogar contra a máquina\n"
                     "2. Jogar multiplayer\n")
@@ -166,7 +168,6 @@ def handle_client(client_socket, game):
             modo = int(client_socket.recv(1024).decode().strip())
             game.singleplayer = True if modo == 1 else False
             
-            # Solicita a modalidade
             client_socket.send("Escolha a modalidade (digite 20 ou 52): ".encode())
             modalidade = int(client_socket.recv(1024).decode().strip())
             if modalidade not in [20, 52]:
@@ -175,7 +176,7 @@ def handle_client(client_socket, game):
                 return
             game.mode = modalidade
         else:
-            # Se for multiplayer e não for o primeiro cliente, apenas informa para aguardar
+            # Se multiplayer e não for o primeiro cliente, apenas informa para aguardar
             if not game.singleplayer:
                 client_socket.send("Aguardando início da partida...\n".encode())
                 while len(game.players) < 4:
@@ -192,25 +193,34 @@ def handle_client(client_socket, game):
         
         # Loop principal do jogo
         while True:
-            # Para singleplayer, se a mão do jogador humano (índice 0) estiver vazia, encerra o jogo
-            if game.singleplayer and not game.hands[0]:
-                game.end_game()
-                break
-            client_socket.send("Escolha uma opção:\n1. Jogar próxima rodada\n2. Ver histórico\n3. Sair\n".encode())
+            client_socket.send((
+                "\nEscolha uma opção:\n"
+                "1. Jogar próxima rodada\n"
+                "2. Ver histórico\n"
+                "3. Ver minha mão\n"
+                "4. Jogar automaticamente\n"
+                "5. Sair\n"
+            ).encode())
             opcao = int(client_socket.recv(1024).decode().strip())
+            idx = game.players.index(client_socket)
             if opcao == 1:
-                # Solicita a carta do jogador
-                client_socket.send("Digite a carta que deseja jogar (ex: Qe): ".encode())
-                carta = client_socket.recv(1024).decode().strip().upper()
-                idx = game.players.index(client_socket)
+                client_socket.send("Digite a carta que deseja jogar (ex: Qe) ou 'auto' para jogar automaticamente: ".encode())
+                carta = client_socket.recv(1024).decode().strip()
                 try:
                     game.play_step(idx, carta)
                 except Exception as err:
-                    client_socket.send(f"Erro: {err}\nSua mão: {game.hands[idx]}\n".encode())
+                    client_socket.send(f"Erro: {err}\nSua mão: {game.get_hand(idx)}\n".encode())
                     continue
             elif opcao == 2:
                 client_socket.send(("Histórico da partida:\n" + "\n".join(game.history)).encode())
             elif opcao == 3:
+                client_socket.send(f"Sua mão: {game.get_hand(idx)}\n".encode())
+            elif opcao == 4:
+                try:
+                    game.play_step(idx, "auto")
+                except Exception as err:
+                    client_socket.send(f"Erro: {err}\n".encode())
+            elif opcao == 5:
                 client_socket.send("Saindo...\n".encode())
                 client_socket.close()
                 break
