@@ -96,6 +96,8 @@ class DouradoGame:
         with self.lock:
             self.players.append(player_socket)
             self.player_names.append(player_name)
+            # Notifica todos sobre a nova conexão
+            self.broadcast(f"{player_name} se conectou.")
 
     def broadcast(self, message):
         """Envia uma mensagem para todos os jogadores."""
@@ -185,32 +187,102 @@ class DouradoGame:
         self.broadcast(f"{round_summary}\nDupla {winner % 2 + 1} venceu. Motivo: {reason}\n")
 
     def end_game(self):
-        """Finaliza o jogo e salva os dados."""
+        """Finaliza o jogo, salva os dados e envia ranking aos jogadores."""
         self.game_end_time = datetime.now()
         winner_team = 1 if self.montes[0] > self.montes[1] else 2
         self.history.append(f"Dupla {winner_team} venceu a partida com placar {self.montes}")
         self.broadcast("Partida terminada!\n" + "\n".join(self.history))
-        self.save_game_data()
+        self.save_game_data(winner_team)
+        ranking = self.compute_ranking()
+        self.broadcast("----- Ranking -----\n" + ranking + "\n")
+        self.prompt_new_game()
 
-    def save_game_data(self):
+    def save_game_data(self, winner_team):
         """Salva os dados da partida em um arquivo CSV."""
         filename = "game_data.csv"
         with open(filename, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
+            # Escreve o cabeçalho se o arquivo estiver vazio
             if file.tell() == 0:
-                writer.writerow(["Nome do Jogador", "Cartas Jogadas", "Início da Partida", "Término da Partida"])
+                writer.writerow(["Nome do Jogador", "Cartas Restantes", "Início da Partida", "Término da Partida", "Resultado"])
             for i, name in enumerate(self.player_names):
-                played_cards = " | ".join([self.format_card(card) for card in self.hands[i]])
+                played_cards = " | ".join([self.format_card(card) for card in self.hands[i]]) if i < len(self.hands) else "" 
+                # Define se o jogador foi vencedor: em um jogo de 4 jogadores, jogadores 1 e 3 formam a equipe 1 e 2 e 4 a equipe 2
+                if (winner_team == 1 and i % 2 == 0) or (winner_team == 2 and i % 2 == 1):
+                    result = "Vencedor"
+                else:
+                    result = "Perdedor"
                 writer.writerow([
                     name,
                     played_cards,
                     self.game_start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                    self.game_end_time.strftime("%Y-%m-%d %H:%M:%S")
+                    self.game_end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    result
                 ])
 
-    def get_hand(self, player_index):
-        """Retorna a mão do jogador em formato legível."""
-        return ', '.join([self.format_card(card) for card in self.hands[player_index]])
+    def compute_ranking(self):
+        """
+        Lê o arquivo CSV e agrupa as partidas por nome, somando a quantidade de vitórias.
+        Retorna uma string formatada com o ranking.
+        """
+        filename = "game_data.csv"
+        ranking_dict = {}
+        try:
+            with open(filename, mode="r", encoding="utf-8") as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    name = row["Nome do Jogador"]
+                    result = row["Resultado"]
+                    if name not in ranking_dict:
+                        ranking_dict[name] = 0
+                    if result == "Vencedor":
+                        ranking_dict[name] += 1
+        except Exception as e:
+            print(f"Erro ao calcular ranking: {e}")
+            return ""
+        
+        # Ordena o ranking do maior para o menor número de vitórias
+        sorted_ranking = sorted(ranking_dict.items(), key=lambda x: x[1], reverse=True)
+        ranking_str = "\n".join([f"{i+1}. {name} - {wins} vitórias" for i, (name, wins) in enumerate(sorted_ranking)])
+        return ranking_str
+
+    def prompt_new_game(self):
+        """
+        Solicita aos jogadores se desejam jogar novamente.
+        Se todos não digitarem 'sair', a partida reinicia; caso contrário, as conexões são encerradas.
+        """
+        self.broadcast("Deseja jogar novamente? Digite seu nome para continuar ou 'sair' para encerrar:")
+        responses = []
+        for player in self.players:
+            try:
+                resp = player.recv(1024).decode().strip().lower()
+                responses.append(resp)
+            except:
+                responses.append("sair")
+        if any(resp == "sair" for resp in responses):
+            self.broadcast("Encerrando conexão para alguns jogadores. Obrigado por jogar!")
+            for player, resp in zip(self.players, responses):
+                if resp == "sair":
+                    try:
+                        player.send("Saindo...\n".encode())
+                        player.close()
+                    except:
+                        pass
+            # Reinicia o jogo apenas com os jogadores que não saíram
+            self.players = [p for p, r in zip(self.players, responses) if r != "sair"]
+            self.player_names = [name for name, r in zip(self.player_names, responses) if r != "sair"]
+        else:
+            self.broadcast("Reiniciando partida...")
+        # Reinicia as variáveis do jogo para uma nova partida
+        self.deck = []
+        self.trump_card = None
+        self.trump_suit = None
+        self.history = []
+        self.hands = []
+        self.montes = [0, 0]
+        self.starting_player = 0
+        self.game_start_time = None
+        self.game_end_time = None
 
 def handle_client(client_socket, game):
     """Função para lidar com cada cliente."""
@@ -246,13 +318,13 @@ def handle_client(client_socket, game):
         # Inicia o jogo quando o número necessário de jogadores for atingido
         if len(game.players) == (1 if game.singleplayer else 4) and game.game_start_time is None:
             game.start_game()
-            hands = game.deal_cards()
+            game.deal_cards()
             game.reveal_hands()
             for i, player in enumerate(game.players):
                 player.send(f"Sua mão: {game.get_hand(i)}\n".encode())
                 game.history.append(f"Jogador {i+1}: {game.get_hand(i)}")
         
-        # Loop principal do jogo
+        # Loop principal do jogo com o menu de opções
         while True:
             client_socket.send((
                 "\nEscolha uma opção:\n"
@@ -262,7 +334,12 @@ def handle_client(client_socket, game):
                 "4. Jogar automaticamente\n"
                 "5. Sair\n"
             ).encode())
-            opcao = int(client_socket.recv(1024).decode().strip())
+            try:
+                opcao = int(client_socket.recv(1024).decode().strip())
+            except ValueError:
+                client_socket.send("Opção inválida. Tente novamente.\n".encode())
+                continue
+            
             idx = game.players.index(client_socket)
             if opcao == 1:
                 client_socket.send("Digite a carta que deseja jogar (ex: Qe) ou 'auto' para jogar automaticamente: ".encode())
@@ -285,6 +362,8 @@ def handle_client(client_socket, game):
                 client_socket.send("Saindo...\n".encode())
                 client_socket.close()
                 break
+            else:
+                client_socket.send("Opção inválida. Tente novamente.\n".encode())
     except Exception as e:
         try:
             client_socket.send(f"Erro: {e}".encode())

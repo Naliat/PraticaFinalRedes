@@ -9,14 +9,14 @@ TIMEOUT = 3              # Tempo em segundos para aguardar a resposta
 
 def discover_server():
     """
-    Envia uma mensagem de broadcast para descobrir o servidor e retorna o IP e porta do servidor encontrado.
+    Envia uma mensagem de broadcast para descobrir o servidor e retorna o IP e a porta do servidor encontrado.
     """
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     udp_socket.settimeout(TIMEOUT)
     try:
         udp_socket.sendto(DISCOVER_MSG.encode(), ('<broadcast>', UDP_PORT))
-        data, addr = udp_socket.recvfrom(1024)
+        data, addr = udp_socket.recvfrom(4096)
         response = data.decode()
         if response.startswith("SERVER_FOUND:"):
             tcp_port = int(response.split(":")[1])
@@ -29,14 +29,18 @@ def discover_server():
     return None, None
 
 def receive_messages(client_socket):
+    """
+    Thread para receber mensagens do servidor.
+    """
     while True:
         try:
-            message = client_socket.recv(1024).decode()
+            message = client_socket.recv(4096).decode()
             if message:
                 print(f"\n{message}\n")
             else:
                 break
-        except:
+        except Exception as e:
+            print(f"Erro ao receber mensagem: {e}")
             client_socket.close()
             break
 
@@ -63,24 +67,25 @@ def client():
         return
     
     # Recebe e responde à solicitação de nome
-    name_prompt = client_socket.recv(1024).decode()
+    name_prompt = client_socket.recv(4096).decode()
     print(name_prompt)
     name = input()
     client_socket.send(name.encode())
     
     # Se for o primeiro cliente, o servidor solicitará o modo e a modalidade
     try:
-        mode_menu = client_socket.recv(1024).decode()
+        mode_menu = client_socket.recv(4096).decode()
         if mode_menu.strip():
             print(mode_menu)
             mode = input()
             client_socket.send(mode.encode())
             
-            modality_prompt = client_socket.recv(1024).decode()
+            modality_prompt = client_socket.recv(4096).decode()
             print(modality_prompt)
             modality = input()
             client_socket.send(modality.encode())
     except Exception as e:
+        # Se não houver solicitação de modo/modality, prossegue
         pass
 
     # Inicia a thread para receber mensagens do servidor
@@ -94,7 +99,7 @@ def client():
     # Loop principal para enviar comandos ao servidor
     while True:
         try:
-            # O usuário pode digitar diretamente as opções do menu que o servidor envia:
+            # O usuário pode digitar as opções do menu enviado pelo servidor:
             # 1. Jogar próxima rodada
             # 2. Ver histórico
             # 3. Ver minha mão
