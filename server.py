@@ -5,6 +5,36 @@ import csv
 import time
 from datetime import datetime
 
+# ------------------------------------------
+# Configuração para descoberta via UDP
+# ------------------------------------------
+UDP_PORT = 54321       # Porta para descoberta UDP
+TCP_PORT = 12345       # Porta do servidor TCP (mantida a mesma)
+BROADCAST_MSG = "DISCOVER_SERVER"
+RESPONSE_MSG = f"SERVER_FOUND:{TCP_PORT}"
+
+def udp_discovery():
+    """
+    Função que aguarda requisições UDP de descoberta e responde com as informações do servidor.
+    """
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    udp_socket.bind(("", UDP_PORT))
+    print(f"Servidor UDP de descoberta iniciado na porta {UDP_PORT}...")
+    
+    while True:
+        try:
+            data, addr = udp_socket.recvfrom(1024)
+            if data.decode() == BROADCAST_MSG:
+                udp_socket.sendto(RESPONSE_MSG.encode(), addr)
+                print(f"Respondendo a descoberta para {addr}")
+        except Exception as e:
+            print(f"Erro no UDP: {e}")
+            break
+
+# ------------------------------------------
+# Lógica original do jogo
+# ------------------------------------------
 class DouradoGame:
     def __init__(self, mode=20, singleplayer=False):
         self.players = []             # Sockets dos jogadores
@@ -21,8 +51,10 @@ class DouradoGame:
         self.player_names = []        # Nomes dos jogadores
         self.played_cards = []        # Histórico das rodadas
         self.singleplayer = singleplayer  # True se jogar contra a máquina
+        self.lock = threading.Lock()  # Lock para sincronização
 
     def create_deck(self):
+        """Cria o baralho de acordo com a modalidade."""
         suits = ['Ouros', 'Espadas', 'Copas', 'Paus']
         values = ['4', '5', '6', '7', 'Q', 'J', 'K', 'A', '2', '3']
         if self.mode == 20:
@@ -37,16 +69,19 @@ class DouradoGame:
         self.deck = deck
 
     def start_game(self):
-        self.create_deck()
-        if not self.deck:
-            raise ValueError("O baralho está vazio.")
-        self.trump_card = self.deck.pop()
-        self.trump_suit = self.trump_card[1]
-        self.history.append(f"Carta virada (Bebi): {self.trump_card}")
-        self.history.append(f"Naipe principal: {self.trump_suit}")
-        self.game_start_time = datetime.now()
+        """Inicia o jogo."""
+        with self.lock:
+            self.create_deck()
+            if not self.deck:
+                raise ValueError("O baralho está vazio.")
+            self.trump_card = self.deck.pop()
+            self.trump_suit = self.trump_card[1]
+            self.history.append(f"Carta virada (Bebi): {self.format_card(self.trump_card)}")
+            self.history.append(f"Naipe principal: {self.trump_suit}")
+            self.game_start_time = datetime.now()
 
     def deal_cards(self):
+        """Distribui as cartas para os jogadores."""
         num_cards = 3 if self.mode == 20 else 9
         self.hands = []
         if len(self.deck) < num_cards * 4:
@@ -57,25 +92,47 @@ class DouradoGame:
         return self.hands
 
     def add_player(self, player_socket, player_name):
-        self.players.append(player_socket)
-        self.player_names.append(player_name)
+        """Adiciona um jogador ao jogo."""
+        with self.lock:
+            self.players.append(player_socket)
+            self.player_names.append(player_name)
 
     def broadcast(self, message):
+        """Envia uma mensagem para todos os jogadores."""
         for player in self.players:
             try:
                 player.send(message.encode())
             except:
                 pass
 
+    def format_card(self, card):
+        """Formata a carta para exibição por extenso."""
+        value, suit = card
+        value_map = {
+            '4': '4',
+            '5': '5',
+            '6': '6',
+            '7': '7',
+            'Q': 'Dama',
+            'J': 'Valete',
+            'K': 'Rei',
+            'A': 'Ás',
+            '2': '2',
+            '3': '3'
+        }
+        return f"{value_map.get(value, value)} de {suit}"
+
     def reveal_hands(self):
-        hands_summary = "\n".join([f"Jogador {i+1}: {hand}" for i, hand in enumerate(self.hands)])
+        """Mostra as cartas distribuídas para todos os jogadores."""
+        hands_summary = "\n".join([f"Jogador {i+1}: {', '.join([self.format_card(c) for c in hand])}" 
+                                   for i, hand in enumerate(self.hands)])
         self.broadcast(f"Cartas Distribuídas:\n{hands_summary}\n")
         self.history.append(f"Cartas distribuídas:\n{hands_summary}")
-        self.broadcast(f"Carta Virada (Bebi): {self.trump_card}\n")
+        self.broadcast(f"Carta Virada (Bebi): {self.format_card(self.trump_card)}\n")
         self.broadcast(f"Naipe Principal: {self.trump_suit}\n")
 
     def card_value(self, card):
-        # Define os valores para comparação das cartas
+        """Retorna o valor da carta para comparação."""
         values = {'4': 1, '5': 2, '6': 3, '7': 4, 'Q': 5, 'J': 6, 'K': 7, 'A': 8, '2': 9, '3': 10}
         value, suit = card
         if card == ('3', 'Espadas'):
@@ -103,7 +160,7 @@ class DouradoGame:
             if not chosen_card_tuple[1]:
                 raise ValueError(f"Naipe inválido: {chosen_card[1]}")
             if chosen_card_tuple not in self.hands[player_index]:
-                raise ValueError(f"A carta {chosen_card_tuple} não está na sua mão.")
+                raise ValueError(f"A carta {self.format_card(chosen_card_tuple)} não está na sua mão.")
         self.hands[player_index].remove(chosen_card_tuple)
         current_round = [None] * 4
         current_round[player_index] = chosen_card_tuple
@@ -114,7 +171,7 @@ class DouradoGame:
                 else:
                     current_round[i] = self.hands[i].pop()  # Em multiplayer, o servidor simula a jogada se não for informado
         self.played_cards.append(current_round)
-        round_summary = "Rodada: " + ", ".join([f"Jogador {i+1}: {card}" for i, card in enumerate(current_round)])
+        round_summary = "Rodada: " + ", ".join([f"Jogador {i+1}: {self.format_card(card)}" for i, card in enumerate(current_round)])
         self.history.append(round_summary)
         self.broadcast(round_summary)
         try:
@@ -123,11 +180,12 @@ class DouradoGame:
             winner = 0
         self.starting_player = winner
         self.montes[winner % 2] += 1
-        reason = f"A carta {current_round[winner]} foi a maior."
+        reason = f"A carta {self.format_card(current_round[winner])} foi a maior."
         self.history.append(f"Dupla {winner % 2 + 1} venceu a rodada. Motivo: {reason}")
         self.broadcast(f"{round_summary}\nDupla {winner % 2 + 1} venceu. Motivo: {reason}\n")
 
     def end_game(self):
+        """Finaliza o jogo e salva os dados."""
         self.game_end_time = datetime.now()
         winner_team = 1 if self.montes[0] > self.montes[1] else 2
         self.history.append(f"Dupla {winner_team} venceu a partida com placar {self.montes}")
@@ -135,13 +193,14 @@ class DouradoGame:
         self.save_game_data()
 
     def save_game_data(self):
+        """Salva os dados da partida em um arquivo CSV."""
         filename = "game_data.csv"
         with open(filename, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
             if file.tell() == 0:
                 writer.writerow(["Nome do Jogador", "Cartas Jogadas", "Início da Partida", "Término da Partida"])
             for i, name in enumerate(self.player_names):
-                played_cards = " | ".join([str(card) for card in self.hands[i]])
+                played_cards = " | ".join([self.format_card(card) for card in self.hands[i]])
                 writer.writerow([
                     name,
                     played_cards,
@@ -150,9 +209,11 @@ class DouradoGame:
                 ])
 
     def get_hand(self, player_index):
-        return str(self.hands[player_index])
+        """Retorna a mão do jogador em formato legível."""
+        return ', '.join([self.format_card(card) for card in self.hands[player_index]])
 
 def handle_client(client_socket, game):
+    """Função para lidar com cada cliente."""
     try:
         # Solicita o nome do jogador
         client_socket.send("Digite seu nome: ".encode())
@@ -188,8 +249,8 @@ def handle_client(client_socket, game):
             hands = game.deal_cards()
             game.reveal_hands()
             for i, player in enumerate(game.players):
-                player.send(f"Sua mão: {hands[i]}\n".encode())
-                game.history.append(f"Jogador {i+1}: {hands[i]}")
+                player.send(f"Sua mão: {game.get_hand(i)}\n".encode())
+                game.history.append(f"Jogador {i+1}: {game.get_hand(i)}")
         
         # Loop principal do jogo
         while True:
@@ -232,9 +293,11 @@ def handle_client(client_socket, game):
         client_socket.close()
 
 def server():
+    """Função principal do servidor."""
     game = DouradoGame()
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('localhost', 12345))
+    # Bind para todas as interfaces para permitir conexão de outros computadores
+    server_socket.bind(('0.0.0.0', TCP_PORT))
     server_socket.listen(4)
     print("Servidor iniciado e aguardando conexões...")
     
@@ -248,4 +311,6 @@ def server():
             break
 
 if __name__ == "__main__":
+    # Inicia a thread de descoberta UDP
+    threading.Thread(target=udp_discovery, daemon=True).start()
     server()

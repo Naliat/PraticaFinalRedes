@@ -2,6 +2,32 @@ import socket
 import threading
 import time
 
+# Configurações para descoberta UDP
+UDP_PORT = 54321         # Deve ser igual à porta UDP definida no servidor
+DISCOVER_MSG = "DISCOVER_SERVER"
+TIMEOUT = 3              # Tempo em segundos para aguardar a resposta
+
+def discover_server():
+    """
+    Envia uma mensagem de broadcast para descobrir o servidor e retorna o IP e porta do servidor encontrado.
+    """
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    udp_socket.settimeout(TIMEOUT)
+    try:
+        udp_socket.sendto(DISCOVER_MSG.encode(), ('<broadcast>', UDP_PORT))
+        data, addr = udp_socket.recvfrom(1024)
+        response = data.decode()
+        if response.startswith("SERVER_FOUND:"):
+            tcp_port = int(response.split(":")[1])
+            print(f"Servidor encontrado em {addr[0]} na porta {tcp_port}")
+            return addr[0], tcp_port
+    except socket.timeout:
+        print("Nenhum servidor encontrado na rede.")
+    finally:
+        udp_socket.close()
+    return None, None
+
 def receive_messages(client_socket):
     while True:
         try:
@@ -22,10 +48,21 @@ def choose_game_mode():
     return int(choice)
 
 def client():
+    # Descobre o servidor na rede
+    server_ip, server_port = discover_server()
+    if not server_ip:
+        print("Não foi possível localizar o servidor. Verifique se o servidor está ativo e na mesma rede.")
+        return
+
+    # Conecta ao servidor via TCP
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect(('localhost', 12345))
+    try:
+        client_socket.connect((server_ip, server_port))
+    except Exception as e:
+        print(f"Erro ao conectar no servidor: {e}")
+        return
     
-    # Recebe e responde a solicitação de nome
+    # Recebe e responde à solicitação de nome
     name_prompt = client_socket.recv(1024).decode()
     print(name_prompt)
     name = input()
