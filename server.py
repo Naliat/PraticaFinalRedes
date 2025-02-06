@@ -246,13 +246,13 @@ def handle_client(client_socket, game):
         # Inicia o jogo quando o número necessário de jogadores for atingido
         if len(game.players) == (1 if game.singleplayer else 4) and game.game_start_time is None:
             game.start_game()
-            game.deal_cards()
+            hands = game.deal_cards()
             game.reveal_hands()
             for i, player in enumerate(game.players):
                 player.send(f"Sua mão: {game.get_hand(i)}\n".encode())
                 game.history.append(f"Jogador {i+1}: {game.get_hand(i)}")
         
-        # Loop principal do jogo com o menu de opções corrigido
+        # Loop principal do jogo
         while True:
             client_socket.send((
                 "\nEscolha uma opção:\n"
@@ -262,12 +262,7 @@ def handle_client(client_socket, game):
                 "4. Jogar automaticamente\n"
                 "5. Sair\n"
             ).encode())
-            try:
-                opcao = int(client_socket.recv(1024).decode().strip())
-            except ValueError:
-                client_socket.send("Opção inválida. Tente novamente.\n".encode())
-                continue
-            
+            opcao = int(client_socket.recv(1024).decode().strip())
             idx = game.players.index(client_socket)
             if opcao == 1:
                 client_socket.send("Digite a carta que deseja jogar (ex: Qe) ou 'auto' para jogar automaticamente: ".encode())
@@ -290,8 +285,6 @@ def handle_client(client_socket, game):
                 client_socket.send("Saindo...\n".encode())
                 client_socket.close()
                 break
-            else:
-                client_socket.send("Opção inválida. Tente novamente.\n".encode())
     except Exception as e:
         try:
             client_socket.send(f"Erro: {e}".encode())
