@@ -1,115 +1,102 @@
 import socket
 import threading
+import sys
 import time
 
-# Configurações para descoberta UDP
-UDP_PORT = 54321         # Deve ser igual à porta UDP definida no servidor
-DISCOVER_MSG = "DISCOVER_SERVER"
-TIMEOUT = 3              # Tempo em segundos para aguardar a resposta
+# Configurações de conexão
+TCP_PORT = 12345
+UDP_PORT = 54321
+BROADCAST_MSG = "DISCOVER_SERVER"
+DISCOVERY_TIMEOUT = 5  # tempo máximo para descoberta via UDP (em segundos)
 
 def discover_server():
     """
-    Envia uma mensagem de broadcast para descobrir o servidor e retorna o IP e porta do servidor encontrado.
+    Realiza descoberta via UDP para encontrar o servidor.
+    Envia uma mensagem broadcast e aguarda a resposta.
+    Retorna uma tupla (server_ip, server_port) se encontrado ou (None, None) caso contrário.
     """
-    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    udp_socket.settimeout(TIMEOUT)
+    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_sock.settimeout(DISCOVERY_TIMEOUT)
+    udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     try:
-        udp_socket.sendto(DISCOVER_MSG.encode(), ('<broadcast>', UDP_PORT))
-        data, addr = udp_socket.recvfrom(1024)
+        udp_sock.sendto(BROADCAST_MSG.encode(), ('<broadcast>', UDP_PORT))
+        data, addr = udp_sock.recvfrom(1024)
         response = data.decode()
         if response.startswith("SERVER_FOUND:"):
             tcp_port = int(response.split(":")[1])
-            print(f"Servidor encontrado em {addr[0]} na porta {tcp_port}")
+            print(f"[DISCOVERY] Servidor encontrado em {addr[0]}:{tcp_port}")
             return addr[0], tcp_port
-    except socket.timeout:
-        print("Nenhum servidor encontrado na rede.")
+    except Exception as e:
+        print(f"[DISCOVERY] Erro na descoberta UDP: {e}")
     finally:
-        udp_socket.close()
+        udp_sock.close()
     return None, None
 
-def receive_messages(client_socket):
+def receive_messages(sock):
+    """
+    Thread responsável por receber mensagens do servidor e exibi-las.
+    Caso o servidor encerre a conexão, informa o usuário e finaliza o programa.
+    """
     while True:
         try:
-            message = client_socket.recv(1024).decode()
-            if message:
-                print(f"\n{message}\n")
-            else:
+            data = sock.recv(4096)
+            if not data:
+                print("[SERVER] Conexão encerrada pelo servidor.")
                 break
-        except:
-            client_socket.close()
+            # Exibe a mensagem recebida (pode conter instruções do jogo, histórico, etc.)
+            print("\n" + data.decode() + "\n> ", end="", flush=True)
+        except Exception as e:
+            print(f"[RECEIVER] Erro ao receber dados: {e}")
             break
+    print("[RECEIVER] Encerrando thread de recebimento.")
+    sock.close()
+    sys.exit()
 
-def choose_game_mode():
-    print("Escolha o modo de jogo:")
-    print("1. Jogar contra a máquina")
-    print("2. Jogar multiplayer")
-    choice = input("Escolha 1 ou 2: ").strip()
-    return int(choice)
+def send_user_input(sock):
+    """
+    Thread responsável por ler a entrada do usuário e enviar os comandos para o servidor.
+    Caso o usuário digite 'sair' ou 'exit', encerra a conexão.
+    """
+    print("\n[CLIENTE] Digite seus comandos conforme as instruções do jogo.")
+    while True:
+        try:
+            # Exibe um prompt para o usuário
+            message = input("> ").strip()
+            if message.lower() in ["exit", "sair"]:
+                print("[CLIENTE] Encerrando conexão...")
+                sock.send(message.encode())
+                break
+            # Envia a mensagem digitada ao servidor
+            sock.send(message.encode())
+        except Exception as e:
+            print(f"[SENDER] Erro ao enviar mensagem: {e}")
+            break
+    sock.close()
+    sys.exit()
 
-def client():
-    # Descobre o servidor na rede
+def main():
+    # Tenta descobrir o servidor via UDP
     server_ip, server_port = discover_server()
-    if not server_ip:
-        print("Não foi possível localizar o servidor. Verifique se o servidor está ativo e na mesma rede.")
-        return
+    if server_ip is None:
+        # Se não for possível a descoberta automática, solicita o IP manualmente.
+        server_ip = input("Servidor não encontrado automaticamente. Digite o IP do servidor: ").strip()
+        server_port = TCP_PORT
 
-    # Conecta ao servidor via TCP
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print(f"[CLIENTE] Tentando conectar ao servidor em {server_ip}:{server_port}...")
     try:
-        client_socket.connect((server_ip, server_port))
+        tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp_sock.connect((server_ip, server_port))
+        print("[CLIENTE] Conectado com sucesso!")
     except Exception as e:
-        print(f"Erro ao conectar no servidor: {e}")
-        return
-    
-    # Recebe e responde à solicitação de nome
-    name_prompt = client_socket.recv(1024).decode()
-    print(name_prompt)
-    name = input()
-    client_socket.send(name.encode())
-    
-    # Se for o primeiro cliente, o servidor solicitará o modo e a modalidade
-    try:
-        mode_menu = client_socket.recv(1024).decode()
-        if mode_menu.strip():
-            print(mode_menu)
-            mode = input()
-            client_socket.send(mode.encode())
-            
-            modality_prompt = client_socket.recv(1024).decode()
-            print(modality_prompt)
-            modality = input()
-            client_socket.send(modality.encode())
-    except Exception as e:
-        pass
+        print(f"[CLIENTE] Erro ao conectar ao servidor: {e}")
+        sys.exit(1)
 
-    # Inicia a thread para receber mensagens do servidor
-    threading.Thread(target=receive_messages, args=(client_socket,), daemon=True).start()
-    
-    # Aguarda um instante para garantir que o servidor envie as cartas
-    time.sleep(1)
-    # Solicita automaticamente para ver a mão (opção 3)
-    client_socket.send("3".encode())
-    
-    # Loop principal para enviar comandos ao servidor
-    while True:
-        try:
-            # O usuário pode digitar diretamente as opções do menu que o servidor envia:
-            # 1. Jogar próxima rodada
-            # 2. Ver histórico
-            # 3. Ver minha mão
-            # 4. Jogar automaticamente
-            # 5. Sair
-            user_input = input()
-            if user_input.strip().lower() == "sair":
-                client_socket.send("5".encode())  # Envia opção 5 para sair
-                break
-            else:
-                client_socket.send(user_input.encode())
-        except KeyboardInterrupt:
-            break
-    
-    client_socket.close()
+    # Inicia a thread de recebimento de mensagens do servidor
+    receiver_thread = threading.Thread(target=receive_messages, args=(tcp_sock,), daemon=True)
+    receiver_thread.start()
+
+    # A thread principal (ou uma separada) fica responsável por enviar as mensagens
+    send_user_input(tcp_sock)
 
 if __name__ == "__main__":
-    client()
+    main()

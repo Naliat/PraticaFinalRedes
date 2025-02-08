@@ -72,7 +72,6 @@ class DouradoGame:
         self.mode = mode              # Modalidade: 20 ou 52 cartas
         self.hands = []               # Mãos dos jogadores (lista de listas)
         self.montes = [0, 0]          # Pontuação por dupla
-        self.starting_player = 0      # Índice do jogador vencedor da rodada
         self.game_start_time = None
         self.game_end_time = None
         self.player_names = []        # Lista com os nomes dos jogadores
@@ -80,17 +79,21 @@ class DouradoGame:
         self.cards_played = {}        # Dicionário: {nome: [cartas jogadas]}
         self.singleplayer = singleplayer
         self.finished = False         # Flag para indicar fim de partida
+        self.started = False          # Flag para indicar que a partida já iniciou (para multiplayer)
         self.lock = threading.Lock()  # Lock para sincronização
+        # Variáveis para controle da rodada no modo multiplayer:
+        self.current_round = {}       # {player_index: carta_jogada}
+        self.round_condition = threading.Condition(self.lock)
+        self.round_result_computed = False
+        self.current_turn = 0         # Controla a ordem de jogada: 0, 1, 2, 3
 
     def create_deck(self):
         """Cria o baralho conforme a modalidade."""
         suits = ['Ouros', 'Espadas', 'Copas', 'Paus']
-        # Aqui usamos um conjunto de valores para todas as cartas.
-        values = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'Q', 'J', 'K', 'A']
+        values = ['1','2','3','4','5','6','7','8','9','10','Q','J','K','A']
         if self.mode == 20:
-            # Exemplo: usar apenas figuras (K, J, Q, A) + extras
             deck = [card for card in [(value, suit) for suit in suits for value in values]
-                    if card[0] in ['K', 'J', 'Q', 'A']]
+                    if card[0] in ['K','J','Q','A']]
             extras = [('3', 'Espadas'), ('3', 'Paus'), ('2', 'Paus'), ('2', 'Espadas')]
             deck += extras
         else:
@@ -109,6 +112,7 @@ class DouradoGame:
             self.history.append(f"Carta virada (Bebi): {self.format_card(self.trump_card)}")
             self.history.append(f"Naipe principal: {self.trump_suit}")
             self.game_start_time = datetime.now()
+            self.current_turn = 0  # Reinicia a ordem de jogada a cada partida
 
     def deal_cards(self):
         """Distribui as cartas para os 4 jogadores."""
@@ -119,6 +123,10 @@ class DouradoGame:
         for _ in range(4):
             hand = [self.deck.pop() for _ in range(num_cards)]
             self.hands.append(hand)
+
+        print("[GAME] Cartas distribuídas:")
+        for i in range(4):
+            self.players[i].send(f"Suas cartas: {', '.join([self.format_card(c) for c in self.hands[i]])}\n".encode())
         return self.hands
 
     def add_player(self, player_socket, player_name):
@@ -147,7 +155,7 @@ class DouradoGame:
         return f"{value_map.get(value, value)} de {suit}"
 
     def reveal_hands(self):
-        """Envia a todos os jogadores as mãos distribuídas."""
+        """Envia a todos os jogadores as mãos distribuídas em tempo real."""
         hands_summary = "\n".join(
             [f"Jogador {i+1}: {', '.join([self.format_card(c) for c in hand])}"
              for i, hand in enumerate(self.hands)]
@@ -156,7 +164,6 @@ class DouradoGame:
         self.history.append(f"Cartas distribuídas:\n{hands_summary}")
         self.broadcast(f"Carta Virada (Bebi): {self.format_card(self.trump_card)}\n")
         self.broadcast(f"Naipe Principal: {self.trump_suit}\n")
-        # Imprime no terminal do servidor:
         print("[GAME] Mãos distribuídas:")
         print(hands_summary)
 
@@ -165,93 +172,142 @@ class DouradoGame:
         values = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
                   '6': 6, '7': 7, '8': 8, '9': 9, '10': 10,
                   'Q': 11, 'J': 12, 'K': 13, 'A': 14}
-        # Se for o "3 de Espadas", ele vale 100.
         if card == ('3', 'Espadas'):
             return 100
-        # Se a carta for do naipe principal (trump), adiciona bônus.
         value, suit = card
         if suit == self.trump_suit:
             return 90 + values.get(value, 0)
         return values.get(value, 0)
 
+    def register_move_multiplayer(self, player_index, chosen_card):
+        """
+        Registra a jogada de um jogador no modo multiplayer e aguarda que todos joguem.
+        A ordem de jogada é forçada: o jogador só poderá jogar se for sua vez.
+        Após cada jogada, é enviado um aviso indicando de quem é a vez.
+        """
+        card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
+        rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
+        with self.round_condition:
+            # Aguarda até que seja a vez deste jogador
+            while player_index != self.current_turn:
+                self.round_condition.wait()
+            # Processa a jogada
+            if chosen_card.lower() == 'auto':
+                if not self.hands[player_index]:
+                    raise ValueError("Sua mão está vazia!")
+                chosen_card_tuple = random.choice(self.hands[player_index])
+            else:
+                if len(chosen_card) < 2:
+                    raise ValueError("Formato inválido. Exemplo: 'Kc' para Rei de Copas.")
+                raw_value = chosen_card[:-1]
+                suit_letter = chosen_card[-1].upper()
+                if raw_value.upper() in rank_map:
+                    value = rank_map[raw_value.upper()]
+                else:
+                    value = raw_value
+                suit = card_map.get(suit_letter)
+                if not suit:
+                    raise ValueError(f"Naipe inválido: {chosen_card[-1]}")
+                chosen_card_tuple = (value, suit)
+                if chosen_card_tuple not in self.hands[player_index]:
+                    raise ValueError(f"A carta {self.format_card(chosen_card_tuple)} não está na sua mão.")
+            self.hands[player_index].remove(chosen_card_tuple)
+            self.current_round[player_index] = chosen_card_tuple
+            self.broadcast(f"{self.player_names[player_index]} jogou {self.format_card(chosen_card_tuple)}")
+            print(f"[GAME] {self.player_names[player_index]} jogou {self.format_card(chosen_card_tuple)}")
+            # Avança para o próximo jogador
+            self.current_turn += 1
+            if self.current_turn < len(self.players):
+                self.broadcast(f"Agora é a vez de: {self.player_names[self.current_turn]}")
+            self.round_condition.notify_all()
+            # Aguarda até que todos tenham jogado nesta rodada
+            while len(self.current_round) < len(self.players):
+                self.round_condition.wait()
+            # Apenas uma thread calcula o resultado da rodada
+            if not self.round_result_computed:
+                self.round_result_computed = True
+                round_moves = [self.current_round[i] for i in range(len(self.players))]
+                round_summary = "Rodada: " + ", ".join(
+                    [f"{self.player_names[i]}: {self.format_card(round_moves[i])}" for i in range(len(round_moves))]
+                )
+                self.history.append(round_summary)
+                self.broadcast(round_summary)
+                print(f"[GAME] {round_summary}")
+                try:
+                    vencedor = round_moves.index(max(round_moves, key=self.card_value))
+                except Exception:
+                    vencedor = 0
+                self.montes[vencedor % 2] += 1
+                reason = f"A carta {self.format_card(round_moves[vencedor])} foi a maior."
+                win_msg = f"{self.player_names[vencedor]} venceu a rodada. Motivo: {reason}"
+                self.history.append(win_msg)
+                self.broadcast(win_msg)
+                print(f"[GAME] {win_msg}")
+            if len(self.current_round) == len(self.players):
+                # Reinicia os controles para a próxima rodada e informa a todos
+                self.current_round = {}
+                self.round_result_computed = False
+                self.current_turn = 0
+                self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
+        return
+
     def play_step(self, player_index, chosen_card):
         """
-        Executa uma jogada. O jogador deve informar a carta no formato <valor><inicial do naipe>.
-        Exemplos:
-          - "1e" → 1 de Espadas  
-          - "Ae" → Ás de Espadas  
-          - "Ve" → Valete de Espadas (V é convertido para J)  
-          - "Rc" → Rei de Copas (R é convertido para K)  
-          - "auto" → jogada automática
+        Se multiplayer, utiliza register_move_multiplayer (com ordem de jogada);
+        se singleplayer, usa a lógica de simulação.
         """
-        # Mapeamento para naipes (E: Espadas, O: Ouros, C: Copas, P: Paus)
-        card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
-        # Mapeamento para valores abreviados (figuras):
-        rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
-        if chosen_card.lower() == 'auto':
-            if not self.hands[player_index]:
-                raise ValueError("Sua mão está vazia!")
-            chosen_card_tuple = random.choice(self.hands[player_index])
+        if not self.singleplayer:
+            return self.register_move_multiplayer(player_index, chosen_card)
         else:
-            if len(chosen_card) < 2:
-                raise ValueError("Formato inválido. Exemplo: 'Rc' para Rei de Copas.")
-            # O valor pode ter mais de um dígito, então pegamos todos os caracteres, exceto o último.
-            raw_value = chosen_card[:-1]
-            suit_letter = chosen_card[-1].upper()
-            # Converte se for atalho de figura:
-            if raw_value.upper() in rank_map:
-                value = rank_map[raw_value.upper()]
+            card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
+            rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
+            if chosen_card.lower() == 'auto':
+                if not self.hands[player_index]:
+                    raise ValueError("Sua mão está vazia!")
+                chosen_card_tuple = random.choice(self.hands[player_index])
             else:
-                value = raw_value  # mantém o que foi digitado (ex: "1", "2", etc.)
-            suit = card_map.get(suit_letter)
-            if not suit:
-                raise ValueError(f"Naipe inválido: {chosen_card[-1]}")
-            chosen_card_tuple = (value, suit)
-            if chosen_card_tuple not in self.hands[player_index]:
-                raise ValueError(f"A carta {self.format_card(chosen_card_tuple)} não está na sua mão.")
-        # Remove a carta da mão do jogador
-        self.hands[player_index].remove(chosen_card_tuple)
-        # Registra a jogada
-        nome = self.player_names[player_index]
-        self.cards_played[nome].append(chosen_card_tuple)
-        # Prepara a rodada (lista com 4 posições)
-        current_round = [None] * 4
-        current_round[player_index] = chosen_card_tuple
-        # Para os demais jogadores, se tiverem cartas, executa jogada simulada/aleatória
-        for i in range(4):
-            if i != player_index:
-                if not self.hands[i]:
-                    continue
-                if self.singleplayer:
-                    card_i = self.hands[i].pop(random.randrange(len(self.hands[i])))
+                if len(chosen_card) < 2:
+                    raise ValueError("Formato inválido. Exemplo: 'Kc' para Rei de Copas.")
+                raw_value = chosen_card[:-1]
+                suit_letter = chosen_card[-1].upper()
+                if raw_value.upper() in rank_map:
+                    value = rank_map[raw_value.upper()]
                 else:
-                    card_i = self.hands[i].pop()  # Jogada simulada
-                current_round[i] = card_i
-                nome_i = self.player_names[i]
-                self.cards_played[nome_i].append(card_i)
-        self.played_cards.append(current_round)
-        # Monta o resumo da rodada (somente para jogadores que jogaram)
-        round_summary = "Rodada: " + ", ".join(
-            [f"Jogador {i+1}: {self.format_card(card)}" 
-             for i, card in enumerate(current_round) if card is not None]
-        )
-        self.history.append(round_summary)
-        self.broadcast(round_summary)
-        # Também imprime no terminal do servidor:
-        print("[GAME] " + round_summary)
-        # Determina o vencedor da rodada
-        try:
-            cartas_validas = [card for card in current_round if card is not None]
-            vencedor = current_round.index(max(cartas_validas, key=self.card_value))
-        except Exception:
-            vencedor = 0
-        self.starting_player = vencedor
-        self.montes[vencedor % 2] += 1
-        reason = f"A carta {self.format_card(current_round[vencedor])} foi a maior."
-        win_msg = f"Dupla {vencedor % 2 + 1} venceu a rodada. Motivo: {reason}"
-        self.history.append(win_msg)
-        self.broadcast(win_msg)
-        print("[GAME] " + win_msg)
+                    value = raw_value
+                suit = card_map.get(suit_letter)
+                if not suit:
+                    raise ValueError(f"Naipe inválido: {chosen_card[-1]}")
+                chosen_card_tuple = (value, suit)
+                if chosen_card_tuple not in self.hands[player_index]:
+                    raise ValueError(f"A carta {self.format_card(chosen_card_tuple)} não está na sua mão.")
+            self.hands[player_index].remove(chosen_card_tuple)
+            current_round = [None] * 4
+            current_round[player_index] = chosen_card_tuple
+            for i in range(4):
+                if i != player_index:
+                    if not self.hands[i]:
+                        continue
+                    card_i = self.hands[i].pop()
+                    current_round[i] = card_i
+            self.played_cards.append(current_round)
+            round_summary = "Rodada: " + ", ".join(
+                [f"Jogador {i+1}: {self.format_card(card)}" for i, card in enumerate(current_round) if card is not None]
+            )
+            self.history.append(round_summary)
+            self.broadcast(round_summary)
+            print(f"[GAME] {round_summary}")
+            try:
+                cartas_validas = [card for card in current_round if card is not None]
+                vencedor = current_round.index(max(cartas_validas, key=self.card_value))
+            except Exception:
+                vencedor = 0
+            self.montes[vencedor % 2] += 1
+            reason = f"A carta {self.format_card(current_round[vencedor])} foi a maior."
+            win_msg = f"{self.player_names[vencedor]} venceu a rodada. Motivo: {reason}"
+            self.history.append(win_msg)
+            self.broadcast(win_msg)
+            print(f"[GAME] {win_msg}")
+        return
 
     def end_game(self):
         """Finaliza a partida, atualiza ranking, salva dados e notifica os jogadores."""
@@ -262,8 +318,7 @@ class DouradoGame:
         atualizar_ranking(self, winner_team)
         msg_final = "Partida terminada!\n" + "\n".join(self.history) + "\n" + obter_ranking_formatado()
         self.broadcast(msg_final)
-        # Imprime o resumo final no terminal do servidor:
-        print("[GAME] " + msg_final)
+        print(f"[GAME] {msg_final}")
         self.save_game_data()
         self.finished = True
 
@@ -289,17 +344,18 @@ class DouradoGame:
             self.history = []
             self.hands = []
             self.montes = [0, 0]
-            self.starting_player = 0
             self.game_start_time = None
             self.game_end_time = None
             self.played_cards = []
             self.cards_played = {}
             self.finished = False
-            # Os nomes dos jogadores e os sockets permanecem.
+            self.current_round = {}
+            self.round_result_computed = False
+            self.current_turn = 0
 
 # Método auxiliar para obter a mão do jogador de forma legível.
 def get_hand(self, player_index):
-    return ', '.join([self.format_card(card) for card in self.hands[player_index]])
+    return ", ".join([self.format_card(card) for card in self.hands[player_index]])
 DouradoGame.get_hand = get_hand
 
 # ------------------------------------------
@@ -307,12 +363,13 @@ DouradoGame.get_hand = get_hand
 # ------------------------------------------
 def handle_client(client_socket, game):
     try:
-        # Solicita e registra o nome do jogador
+        # Solicita o nome do jogador e exibe-o no servidor
         client_socket.send("Digite seu nome: ".encode())
         player_name = client_socket.recv(1024).decode().strip()
+        print(f"[SERVER] Novo jogador conectado: {player_name}")
         game.add_player(client_socket, player_name)
         
-        # Se for o primeiro jogador, define modo e modalidade
+        # Se for o primeiro jogador, solicita as opções
         if len(game.players) == 1:
             menu_inicial = ("Escolha o modo de jogo:\n"
                             "1. Jogar contra a máquina\n"
@@ -334,27 +391,37 @@ def handle_client(client_socket, game):
                 client_socket.send("Modalidade inválida. Encerrando conexão.\n".encode())
                 return
             game.mode = modalidade
-            game.start_game()
-            game.deal_cards()
-            game.reveal_hands()
+            
+            if game.singleplayer:
+                game.start_game()
+                game.deal_cards()
+                game.reveal_hands()
+            else:
+                client_socket.send("Aguardando outros jogadores...\n".encode())
         else:
-            # Para os demais jogadores:
             if game.singleplayer:
                 client_socket.send("Aguardando início da partida...\n".encode())
             else:
-                client_socket.send(f"Você entrou na partida como Jogador {len(game.players)}.\n".encode())
+                # Quando o 4º jogador se conectar, inicia a partida
                 if len(game.players) == 4:
+                    print("[GAME] Iniciando partida...")
+                    send_message(game.players, "Todos os jogadores conectados. Iniciando partida...")
+                    
+                    game.started = True
                     game.start_game()
                     game.deal_cards()
                     game.reveal_hands()
+
+        while not game.started:
+            time.sleep(0.1)
         
-        # Aguarda que a mão esteja pronta e a envia
+        # Aguarda até que as cartas sejam distribuídas para mostrar a mão ao jogador
         idx = game.players.index(client_socket)
         while len(game.hands) <= idx:
             time.sleep(0.1)
         client_socket.send(f"Sua mão: {game.get_hand(idx)}\n".encode())
         
-        # Loop principal de interação com o cliente
+        # Loop de interação com o cliente
         while True:
             if game.finished:
                 menu = ("\nA partida acabou!\n"
@@ -371,7 +438,14 @@ def handle_client(client_socket, game):
                         "7. Mostrar Ranking\n"
                         "5. Sair\n"
                         "Digite sua opção: ")
-            client_socket.send(menu.encode())
+                
+            if idx == game.current_turn:
+                client_socket.send(menu.encode())
+            else: 
+                client_socket.send(f"Agora é a vez de: {game.player_names[game.current_turn]}\n".encode())
+                while(idx != game.current_turn):
+                    time.sleep(0.1)
+
             opcao_str = client_socket.recv(1024).decode().strip()
             if not opcao_str:
                 break
@@ -380,7 +454,6 @@ def handle_client(client_socket, game):
             except:
                 client_socket.send("Opção inválida!\n".encode())
                 continue
-
             if game.finished:
                 if opcao == 6:
                     client_socket.send("Para jogar novamente, desconecte e reconecte.\n".encode())
@@ -400,11 +473,13 @@ def handle_client(client_socket, game):
                     if not game.hands[idx]:
                         client_socket.send("Você não tem mais cartas para jogar!\n".encode())
                         continue
-                    client_socket.send("Digite a carta (ex: Rc para Rei de Copas ou 'auto'): ".encode())
+                    client_socket.send("Digite a carta (ex: Kc para Rei de Copas ou 'auto'): ".encode())
                     carta = client_socket.recv(1024).decode().strip()
                     try:
-                        game.play_step(idx, carta)
-                        # Atualiza a mão de todos os jogadores
+                        if game.singleplayer:
+                            game.play_step(idx, carta)
+                        else:
+                            game.register_move_multiplayer(idx, carta)
                         for player in game.players:
                             p_idx = game.players.index(player)
                             player.send(f"Sua mão: {game.get_hand(p_idx)}\n".encode())
@@ -419,7 +494,10 @@ def handle_client(client_socket, game):
                         client_socket.send("Você não tem mais cartas para jogar!\n".encode())
                         continue
                     try:
-                        game.play_step(idx, "auto")
+                        if game.singleplayer:
+                            game.play_step(idx, "auto")
+                        else:
+                            game.register_move_multiplayer(idx, "auto")
                         for player in game.players:
                             p_idx = game.players.index(player)
                             player.send(f"Sua mão: {game.get_hand(p_idx)}\n".encode())
@@ -434,15 +512,20 @@ def handle_client(client_socket, game):
                 else:
                     client_socket.send("Opção inválida!\n".encode())
                     continue
-
-                with game.lock:
-                    if game.hands and all(len(hand) == 0 for hand in game.hands):
-                        game.end_game()
-        # Fim do loop de interação
+            with game.lock:
+                if game.hands and all(len(hand) == 0 for hand in game.hands):
+                    game.end_game()
     except Exception as e:
         print(f"Erro no handle_client: {str(e)}")
     finally:
         client_socket.close()
+
+def send_message(players, message):
+    try:
+        for player in players:
+            player.send(message.encode())
+    except Exception as e:
+        print(f"Erro ao enviar mensagem: {e}")
 
 # ------------------------------------------
 # Função Principal do Servidor
@@ -458,7 +541,6 @@ def server():
             client_socket, addr = server_socket.accept()
             with game.lock:
                 if game.finished:
-                    # Se o jogo terminou, cria um novo objeto para uma nova partida.
                     game = DouradoGame()
             print(f"[TCP] Conexão estabelecida com {addr}")
             threading.Thread(target=handle_client, args=(client_socket, game), daemon=True).start()
