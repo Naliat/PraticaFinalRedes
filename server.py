@@ -42,10 +42,7 @@ def atualizar_ranking(game, winning_team):
     Dupla 1: jogadores nos índices 0 e 2.
     Dupla 2: jogadores nos índices 1 e 3.
     """
-    if winning_team == 1:
-        indices = [0, 2]
-    else:
-        indices = [1, 3]
+    indices = [0, 2] if winning_team == 1 else [1, 3]
     for i in indices:
         if i < len(game.player_names):
             nome = game.player_names[i]
@@ -60,7 +57,7 @@ def obter_ranking_formatado():
     return ranking_str
 
 # ------------------------------------------
-# Classe do Jogo
+# Classe do Jogo - Dourado
 # ------------------------------------------
 class DouradoGame:
     def __init__(self, mode=20, singleplayer=False):
@@ -68,41 +65,40 @@ class DouradoGame:
         self.deck = []                # Baralho de cartas
         self.trump_card = None        # Carta virada (Bebi)
         self.trump_suit = None        # Naipe principal
-        self.history = []             # Histórico da partida (rounds)
+        self.history = []             # Histórico da partida (rodadas)
         self.mode = mode              # Modalidade: 20 ou 52 cartas
         self.hands = []               # Mãos dos jogadores (lista de listas)
         self.montes = [0, 0]          # Pontuação por dupla
         self.game_start_time = None
         self.game_end_time = None
-        self.player_names = []        # Lista com os nomes dos jogadores
-        self.played_cards = []        # Lista de rounds (cada round: lista de 4 cartas)
-        self.cards_played = {}        # Dicionário: {nome: [cartas jogadas]}
+        self.player_names = []        # Nomes dos jogadores
+        self.played_cards = []        # Histórico das jogadas (cada rodada)
+        self.cards_played = {}        # {nome: [cartas jogadas]}
         self.singleplayer = singleplayer
-        self.finished = False         # Flag para indicar fim de partida
-        self.started = False          # Flag para indicar que a partida já iniciou (para multiplayer)
-        self.lock = threading.Lock()  # Lock para sincronização
-        # Variáveis para controle da rodada no modo multiplayer:
+        self.finished = False         # Partida finalizada
+        self.started = False          # Partida iniciada
+        self.lock = threading.Lock()  # Para sincronização
+        # Controle de rodada (para multiplayer)
         self.current_round = {}       # {player_index: carta_jogada}
         self.round_condition = threading.Condition(self.lock)
         self.round_result_computed = False
-        self.current_turn = 0         # Controla a ordem de jogada: 0, 1, 2, 3
+        self.current_turn = 0         # Índice do jogador cuja vez é
 
     def create_deck(self):
         """Cria o baralho conforme a modalidade."""
         suits = ['Ouros', 'Espadas', 'Copas', 'Paus']
         values = ['1','2','3','4','5','6','7','8','9','10','Q','J','K','A']
         if self.mode == 20:
-            deck = [card for card in [(value, suit) for suit in suits for value in values]
-                    if card[0] in ['K','J','Q','A']]
+            deck = [card for card in [(v, s) for s in suits for v in values] if card[0] in ['K','J','Q','A']]
             extras = [('3', 'Espadas'), ('3', 'Paus'), ('2', 'Paus'), ('2', 'Espadas')]
             deck += extras
         else:
-            deck = [(value, suit) for suit in suits for value in values]
+            deck = [(v, s) for s in suits for v in values]
         random.shuffle(deck)
         self.deck = deck
 
     def start_game(self):
-        """Inicializa o jogo: cria o baralho, define a carta virada e registra o início."""
+        """Inicializa o jogo, criando o baralho e definindo a carta virada."""
         with self.lock:
             self.create_deck()
             if not self.deck:
@@ -112,7 +108,8 @@ class DouradoGame:
             self.history.append(f"Carta virada (Bebi): {self.format_card(self.trump_card)}")
             self.history.append(f"Naipe principal: {self.trump_suit}")
             self.game_start_time = datetime.now()
-            self.current_turn = 0  # Reinicia a ordem de jogada a cada partida
+            self.current_turn = 0
+            print("[GAME] Jogo iniciado.")
 
     def deal_cards(self):
         """Distribui as cartas para os 4 jogadores."""
@@ -123,21 +120,23 @@ class DouradoGame:
         for _ in range(4):
             hand = [self.deck.pop() for _ in range(num_cards)]
             self.hands.append(hand)
-
         print("[GAME] Cartas distribuídas:")
         for i in range(4):
-            self.players[i].send(f"Suas cartas: {', '.join([self.format_card(c) for c in self.hands[i]])}\n".encode())
+            try:
+                self.players[i].send(f"Suas cartas: {self.get_hand(i)}\n".encode())
+            except Exception as e:
+                print(f"[GAME] Erro ao enviar cartas para o Jogador {i+1}: {e}")
         return self.hands
 
     def add_player(self, player_socket, player_name):
-        """Adiciona um jogador e inicializa seu registro de cartas jogadas."""
+        """Adiciona um jogador à partida."""
         with self.lock:
             self.players.append(player_socket)
             self.player_names.append(player_name)
             self.cards_played[player_name] = []
 
     def broadcast(self, message):
-        """Envia mensagem para todos os jogadores."""
+        """Envia uma mensagem para todos os jogadores."""
         for player in self.players:
             try:
                 player.send(message.encode())
@@ -145,7 +144,7 @@ class DouradoGame:
                 pass
 
     def format_card(self, card):
-        """Formata a carta para exibição: <valor> de <naipe>."""
+        """Formata a carta para exibição."""
         value, suit = card
         value_map = {
             '1': '1', '2': '2', '3': '3', '4': '4', '5': '5',
@@ -154,12 +153,13 @@ class DouradoGame:
         }
         return f"{value_map.get(value, value)} de {suit}"
 
+    def get_hand(self, player_index):
+        """Retorna a mão do jogador de forma legível."""
+        return ", ".join([self.format_card(card) for card in self.hands[player_index]])
+
     def reveal_hands(self):
-        """Envia a todos os jogadores as mãos distribuídas em tempo real."""
-        hands_summary = "\n".join(
-            [f"Jogador {i+1}: {', '.join([self.format_card(c) for c in hand])}"
-             for i, hand in enumerate(self.hands)]
-        )
+        """Envia a todos os jogadores as mãos distribuídas e a carta virada."""
+        hands_summary = "\n".join([f"Jogador {i+1}: {self.get_hand(i)}" for i in range(len(self.hands))])
         self.broadcast(f"Cartas Distribuídas:\n{hands_summary}\n")
         self.history.append(f"Cartas distribuídas:\n{hands_summary}")
         self.broadcast(f"Carta Virada (Bebi): {self.format_card(self.trump_card)}\n")
@@ -181,17 +181,16 @@ class DouradoGame:
 
     def register_move_multiplayer(self, player_index, chosen_card):
         """
-        Registra a jogada de um jogador no modo multiplayer e aguarda que todos joguem.
-        A ordem de jogada é forçada: o jogador só poderá jogar se for sua vez.
-        Após cada jogada, é enviado um aviso indicando de quem é a vez.
+        Registra a jogada no modo multiplayer e sincroniza as jogadas.
+        Cada jogador só pode jogar quando for sua vez.
+        Se for a última jogada da rodada, calcula o resultado, reinicia os controles e notifica os clientes.
         """
         card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
         rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
         with self.round_condition:
-            # Aguarda até que seja a vez deste jogador
             while player_index != self.current_turn:
                 self.round_condition.wait()
-            # Processa a jogada
+            # Processa a jogada:
             if chosen_card.lower() == 'auto':
                 if not self.hands[player_index]:
                     raise ValueError("Sua mão está vazia!")
@@ -211,25 +210,16 @@ class DouradoGame:
                 chosen_card_tuple = (value, suit)
                 if chosen_card_tuple not in self.hands[player_index]:
                     raise ValueError(f"A carta {self.format_card(chosen_card_tuple)} não está na sua mão.")
+            # Registra a jogada:
             self.hands[player_index].remove(chosen_card_tuple)
             self.current_round[player_index] = chosen_card_tuple
             self.broadcast(f"{self.player_names[player_index]} jogou {self.format_card(chosen_card_tuple)}")
             print(f"[GAME] {self.player_names[player_index]} jogou {self.format_card(chosen_card_tuple)}")
-            # Avança para o próximo jogador
-            self.current_turn += 1
-            if self.current_turn < len(self.players):
-                self.broadcast(f"Agora é a vez de: {self.player_names[self.current_turn]}")
-            self.round_condition.notify_all()
-            # Aguarda até que todos tenham jogado nesta rodada
-            while len(self.current_round) < len(self.players):
-                self.round_condition.wait()
-            # Apenas uma thread calcula o resultado da rodada
-            if not self.round_result_computed:
-                self.round_result_computed = True
+            # Se essa foi a última jogada da rodada, calcula o resultado e reinicia os controles:
+            if len(self.current_round) == len(self.players):
                 round_moves = [self.current_round[i] for i in range(len(self.players))]
-                round_summary = "Rodada: " + ", ".join(
-                    [f"{self.player_names[i]}: {self.format_card(round_moves[i])}" for i in range(len(round_moves))]
-                )
+                round_summary = "Rodada: " + ", ".join([f"{self.player_names[i]}: {self.format_card(round_moves[i])}" 
+                                                       for i in range(len(round_moves))])
                 self.history.append(round_summary)
                 self.broadcast(round_summary)
                 print(f"[GAME] {round_summary}")
@@ -243,28 +233,38 @@ class DouradoGame:
                 self.history.append(win_msg)
                 self.broadcast(win_msg)
                 print(f"[GAME] {win_msg}")
-            if len(self.current_round) == len(self.players):
-                # Reinicia os controles para a próxima rodada e informa a todos
+                # Reinicia os controles para a próxima rodada
                 self.current_round = {}
                 self.round_result_computed = False
                 self.current_turn = 0
                 self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
+                self.round_condition.notify_all()
+            else:
+                # Se não for a última jogada, apenas incrementa o turno e notifica
+                self.current_turn += 1
+                if self.current_turn < len(self.players):
+                    self.broadcast(f"Agora é a vez de: {self.player_names[self.current_turn]}")
+                self.round_condition.notify_all()
         return
 
     def play_step(self, player_index, chosen_card):
         """
-        Se multiplayer, utiliza register_move_multiplayer (com ordem de jogada);
-        se singleplayer, usa a lógica de simulação.
+        Executa a jogada do jogador.
+        Se multiplayer, utiliza register_move_multiplayer.
+        Se singleplayer, o jogador humano (índice 0) joga manualmente e as jogadas da IA (índices 1-3) são simuladas.
         """
         if not self.singleplayer:
             return self.register_move_multiplayer(player_index, chosen_card)
         else:
+            if player_index != 0:
+                raise ValueError("No modo singleplayer, apenas o jogador humano (índice 0) joga manualmente.")
+            # Jogada do humano:
             card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
             rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
             if chosen_card.lower() == 'auto':
-                if not self.hands[player_index]:
+                if not self.hands[0]:
                     raise ValueError("Sua mão está vazia!")
-                chosen_card_tuple = random.choice(self.hands[player_index])
+                human_card = random.choice(self.hands[0])
             else:
                 if len(chosen_card) < 2:
                     raise ValueError("Formato inválido. Exemplo: 'Kc' para Rei de Copas.")
@@ -277,40 +277,48 @@ class DouradoGame:
                 suit = card_map.get(suit_letter)
                 if not suit:
                     raise ValueError(f"Naipe inválido: {chosen_card[-1]}")
-                chosen_card_tuple = (value, suit)
-                if chosen_card_tuple not in self.hands[player_index]:
-                    raise ValueError(f"A carta {self.format_card(chosen_card_tuple)} não está na sua mão.")
-            self.hands[player_index].remove(chosen_card_tuple)
-            current_round = [None] * 4
-            current_round[player_index] = chosen_card_tuple
-            for i in range(4):
-                if i != player_index:
-                    if not self.hands[i]:
-                        continue
-                    card_i = self.hands[i].pop()
-                    current_round[i] = card_i
-            self.played_cards.append(current_round)
-            round_summary = "Rodada: " + ", ".join(
-                [f"Jogador {i+1}: {self.format_card(card)}" for i, card in enumerate(current_round) if card is not None]
-            )
+                human_card = (value, suit)
+                if human_card not in self.hands[0]:
+                    raise ValueError(f"A carta {self.format_card(human_card)} não está na sua mão.")
+            self.hands[0].remove(human_card)
+            self.current_round[0] = human_card
+            self.broadcast(f"{self.player_names[0]} jogou {self.format_card(human_card)}")
+            print(f"[GAME] {self.player_names[0]} jogou {self.format_card(human_card)}")
+            # Simula as jogadas da IA (índices 1, 2 e 3)
+            for ai_index in range(1, len(self.players)):
+                if self.hands[ai_index]:
+                    ai_card = random.choice(self.hands[ai_index])
+                    self.hands[ai_index].remove(ai_card)
+                    self.current_round[ai_index] = ai_card
+                    self.broadcast(f"{self.player_names[ai_index]} jogou {self.format_card(ai_card)}")
+                    print(f"[GAME] {self.player_names[ai_index]} jogou {self.format_card(ai_card)}")
+                else:
+                    self.current_round[ai_index] = None
+            valid_moves = {i: card for i, card in self.current_round.items() if card is not None}
+            if not valid_moves:
+                return
+            winner_index = max(valid_moves, key=lambda i: self.card_value(valid_moves[i]))
+            self.montes[winner_index % 2] += 1
+            round_moves_str = ", ".join([f"{self.player_names[i]}: {self.format_card(valid_moves[i])}" 
+                                          for i in valid_moves])
+            round_summary = f"Rodada: {round_moves_str}"
             self.history.append(round_summary)
             self.broadcast(round_summary)
             print(f"[GAME] {round_summary}")
-            try:
-                cartas_validas = [card for card in current_round if card is not None]
-                vencedor = current_round.index(max(cartas_validas, key=self.card_value))
-            except Exception:
-                vencedor = 0
-            self.montes[vencedor % 2] += 1
-            reason = f"A carta {self.format_card(current_round[vencedor])} foi a maior."
-            win_msg = f"{self.player_names[vencedor]} venceu a rodada. Motivo: {reason}"
+            reason = f"A carta {self.format_card(valid_moves[winner_index])} foi a maior."
+            win_msg = f"{self.player_names[winner_index]} venceu a rodada. Motivo: {reason}"
             self.history.append(win_msg)
             self.broadcast(win_msg)
             print(f"[GAME] {win_msg}")
-        return
+            self.current_round = {}
+            self.current_turn = 0
+            self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
+            # Verifica se as cartas acabaram
+            if all(len(hand) == 0 for hand in self.hands):
+                self.end_game()
 
     def end_game(self):
-        """Finaliza a partida, atualiza ranking, salva dados e notifica os jogadores."""
+        """Finaliza a partida, mostra a dupla vencedora, atualiza ranking e salva dados."""
         self.game_end_time = datetime.now()
         winner_team = 1 if self.montes[0] > self.montes[1] else 2
         final_msg = f"Dupla {winner_team} venceu a partida com placar {self.montes}"
@@ -323,7 +331,7 @@ class DouradoGame:
         self.finished = True
 
     def save_game_data(self):
-        """Salva os dados da partida em 'game_data.csv' (nome, cartas jogadas, início e término)."""
+        """Salva os dados da partida em 'game_data.csv'."""
         filename = "game_data.csv"
         with open(filename, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
@@ -353,69 +361,94 @@ class DouradoGame:
             self.round_result_computed = False
             self.current_turn = 0
 
-# Método auxiliar para obter a mão do jogador de forma legível.
-def get_hand(self, player_index):
-    return ", ".join([self.format_card(card) for card in self.hands[player_index]])
-DouradoGame.get_hand = get_hand
+# ------------------------------------------
+# Gerenciamento de Salas (para multiplayer)
+# ------------------------------------------
+game_rooms = {}  # Exemplo: {room_id: {"game": DouradoGame, "clients": [socket, ...]}}
+room_lock = threading.Lock()
+
+def assign_room(client_socket, player_name, singleplayer_choice):
+    global game_rooms
+    with room_lock:
+        if singleplayer_choice:
+            room_id = f"SP_{player_name}_{int(time.time())}"
+            new_game = DouradoGame(mode=20, singleplayer=True)
+            new_game.player_names.append(player_name)
+            new_game.players.append(client_socket)
+            game_rooms[room_id] = {"game": new_game, "clients": [client_socket]}
+            return room_id, new_game
+        else:
+            for room_id, room in game_rooms.items():
+                if not room["game"].singleplayer and len(room["clients"]) < 4:
+                    room["clients"].append(client_socket)
+                    room["game"].player_names.append(player_name)
+                    room["game"].players.append(client_socket)
+                    return room_id, room["game"]
+            room_id = f"M_{len(game_rooms)+1}"
+            new_game = DouradoGame(mode=20, singleplayer=False)
+            new_game.player_names.append(player_name)
+            new_game.players.append(client_socket)
+            game_rooms[room_id] = {"game": new_game, "clients": [client_socket]}
+            return room_id, new_game
+
+def send_message(clients, message):
+    for client in clients:
+        try:
+            client.send(message.encode())
+        except Exception as e:
+            print(f"Erro ao enviar mensagem: {e}")
 
 # ------------------------------------------
 # Função para lidar com cada cliente
 # ------------------------------------------
-def handle_client(client_socket, game):
+def handle_client(client_socket):
     try:
-        # Solicita o nome do jogador e exibe-o no servidor
         client_socket.send("Digite seu nome: ".encode())
         player_name = client_socket.recv(1024).decode().strip()
         print(f"[SERVER] Novo jogador conectado: {player_name}")
-        game.add_player(client_socket, player_name)
+        menu_inicial = ("Escolha o modo de jogo:\n"
+                        "1. Jogar contra a máquina (Singleplayer)\n"
+                        "2. Jogar multiplayer\n")
+        client_socket.send(menu_inicial.encode())
+        try:
+            modo = int(client_socket.recv(1024).decode().strip())
+        except:
+            client_socket.send("Entrada inválida. Encerrando conexão.\n".encode())
+            return
+        singleplayer_choice = True if modo == 1 else False
         
-        # Se for o primeiro jogador, solicita as opções
-        if len(game.players) == 1:
-            menu_inicial = ("Escolha o modo de jogo:\n"
-                            "1. Jogar contra a máquina\n"
-                            "2. Jogar multiplayer\n")
-            client_socket.send(menu_inicial.encode())
-            try:
-                modo = int(client_socket.recv(1024).decode().strip())
-            except:
-                client_socket.send("Entrada inválida. Encerrando conexão.\n".encode())
-                return
-            game.singleplayer = True if modo == 1 else False
-            client_socket.send("Escolha a modalidade (digite 20 ou 52): ".encode())
-            try:
-                modalidade = int(client_socket.recv(1024).decode().strip())
-            except:
-                client_socket.send("Entrada inválida. Encerrando conexão.\n".encode())
-                return
-            if modalidade not in [20, 52]:
-                client_socket.send("Modalidade inválida. Encerrando conexão.\n".encode())
-                return
-            game.mode = modalidade
-            
-            if game.singleplayer:
-                game.start_game()
-                game.deal_cards()
-                game.reveal_hands()
-            else:
-                client_socket.send("Aguardando outros jogadores...\n".encode())
+        client_socket.send("Escolha a modalidade (digite 20 ou 52): ".encode())
+        try:
+            modalidade = int(client_socket.recv(1024).decode().strip())
+        except:
+            client_socket.send("Entrada inválida. Encerrando conexão.\n".encode())
+            return
+        if modalidade not in [20, 52]:
+            client_socket.send("Modalidade inválida. Encerrando conexão.\n".encode())
+            return
+        
+        room_id, game = assign_room(client_socket, player_name, singleplayer_choice)
+        client_socket.send(f"Você foi atribuído à sala {room_id}.\n".encode())
+        print(f"[SERVER] Jogador {player_name} atribuído à sala {room_id}.")
+        
+        if singleplayer_choice:
+            game.start_game()
+            game.deal_cards()
+            game.reveal_hands()
+            game.started = True
         else:
-            if game.singleplayer:
-                client_socket.send("Aguardando início da partida...\n".encode())
-            else:
-                # Quando o 4º jogador se conectar, inicia a partida
-                if len(game.players) == 4:
-                    print("[GAME] Iniciando partida...")
-                    send_message(game.players, "Todos os jogadores conectados. Iniciando partida...")
-                    
+            with room_lock:
+                if len(game_rooms[room_id]["clients"]) == 4:
+                    print(f"[GAME] Sala {room_id} completa. Iniciando partida multiplayer...")
+                    send_message(game_rooms[room_id]["clients"], "Todos os jogadores conectados. Iniciando partida...")
                     game.started = True
                     game.start_game()
                     game.deal_cards()
                     game.reveal_hands()
-
+        
         while not game.started:
             time.sleep(0.1)
         
-        # Aguarda até que as cartas sejam distribuídas para mostrar a mão ao jogador
         idx = game.players.index(client_socket)
         while len(game.hands) <= idx:
             time.sleep(0.1)
@@ -438,14 +471,14 @@ def handle_client(client_socket, game):
                         "7. Mostrar Ranking\n"
                         "5. Sair\n"
                         "Digite sua opção: ")
-                
+            
             if idx == game.current_turn:
                 client_socket.send(menu.encode())
-            else: 
+            else:
                 client_socket.send(f"Agora é a vez de: {game.player_names[game.current_turn]}\n".encode())
-                while(idx != game.current_turn):
+                while idx != game.current_turn:
                     time.sleep(0.1)
-
+            
             opcao_str = client_socket.recv(1024).decode().strip()
             if not opcao_str:
                 break
@@ -454,6 +487,7 @@ def handle_client(client_socket, game):
             except:
                 client_socket.send("Opção inválida!\n".encode())
                 continue
+            
             if game.finished:
                 if opcao == 6:
                     client_socket.send("Para jogar novamente, desconecte e reconecte.\n".encode())
@@ -476,11 +510,8 @@ def handle_client(client_socket, game):
                     client_socket.send("Digite a carta (ex: Kc para Rei de Copas ou 'auto'): ".encode())
                     carta = client_socket.recv(1024).decode().strip()
                     try:
-                        if game.singleplayer:
-                            game.play_step(idx, carta)
-                        else:
-                            game.register_move_multiplayer(idx, carta)
-                        for player in game.players:
+                        game.play_step(idx, carta)
+                        for player in game_rooms[room_id]["clients"]:
                             p_idx = game.players.index(player)
                             player.send(f"Sua mão: {game.get_hand(p_idx)}\n".encode())
                     except Exception as e:
@@ -494,11 +525,8 @@ def handle_client(client_socket, game):
                         client_socket.send("Você não tem mais cartas para jogar!\n".encode())
                         continue
                     try:
-                        if game.singleplayer:
-                            game.play_step(idx, "auto")
-                        else:
-                            game.register_move_multiplayer(idx, "auto")
-                        for player in game.players:
+                        game.play_step(idx, "auto")
+                        for player in game_rooms[room_id]["clients"]:
                             p_idx = game.players.index(player)
                             player.send(f"Sua mão: {game.get_hand(p_idx)}\n".encode())
                     except Exception as e:
@@ -512,38 +540,30 @@ def handle_client(client_socket, game):
                 else:
                     client_socket.send("Opção inválida!\n".encode())
                     continue
+            
             with game.lock:
+                # Se todas as mãos estiverem vazias, encerra a partida
                 if game.hands and all(len(hand) == 0 for hand in game.hands):
                     game.end_game()
+        print(f"[SERVER] Cliente {player_name} desconectado.")
     except Exception as e:
         print(f"Erro no handle_client: {str(e)}")
     finally:
         client_socket.close()
 
-def send_message(players, message):
-    try:
-        for player in players:
-            player.send(message.encode())
-    except Exception as e:
-        print(f"Erro ao enviar mensagem: {e}")
-
 # ------------------------------------------
 # Função Principal do Servidor
 # ------------------------------------------
 def server():
-    game = DouradoGame()
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind(('0.0.0.0', TCP_PORT))
-    server_socket.listen(4)
+    server_socket.listen(10)
     print("Servidor TCP iniciado na porta", TCP_PORT)
     while True:
         try:
             client_socket, addr = server_socket.accept()
-            with game.lock:
-                if game.finished:
-                    game = DouradoGame()
             print(f"[TCP] Conexão estabelecida com {addr}")
-            threading.Thread(target=handle_client, args=(client_socket, game), daemon=True).start()
+            threading.Thread(target=handle_client, args=(client_socket,), daemon=True).start()
         except KeyboardInterrupt:
             print("Servidor encerrado.")
             break

@@ -1,7 +1,6 @@
 import socket
 import threading
 import sys
-import time
 
 # Configurações de conexão
 TCP_PORT = 12345
