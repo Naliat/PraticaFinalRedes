@@ -4,7 +4,7 @@ import random
 import csv
 import time
 from datetime import datetime
-
+import os
 # ------------------------------------------
 # Configuração para Descoberta via UDP
 # ------------------------------------------
@@ -329,24 +329,36 @@ class DouradoGame:
         print(f"[GAME] {msg_final}")
         self.save_game_data()
         self.finished = True
-
     def save_game_data(self):
         """
         Salva os dados da partida em 'game_data.csv'.
-        Os dados incluem: Modo, Jogadores, Histórico, Vencedor, Início e Término.
+        Os dados incluem: Modo, Jogadores, Histórico, Vencedor, Placar, Naipe Principal, Carta Virada, Início e Término.
         """
         filename = "game_data.csv"
+        file_exists = os.path.isfile(filename)
+        
         with open(filename, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
-            if file.tell() == 0:
-                writer.writerow(["Modo", "Jogadores", "Histórico", "Vencedor", "Início da Partida", "Término da Partida"])
+            if not file_exists:
+                writer.writerow([
+                    "Modo", "Jogadores", "Histórico", "Vencedor", "Placar", "Naipe Principal", 
+                    "Carta Virada", "Início da Partida", "Término da Partida"
+                ])
+            
             modo = "Singleplayer" if self.singleplayer else "Multiplayer"
             jogadores = ", ".join(self.player_names)
             historico = " || ".join(self.history)
             vencedor_texto = "Dupla 1" if self.montes[0] > self.montes[1] else "Dupla 2"
+            placar = f"[{self.montes[0]}, {self.montes[1]}]"
+            
+            # Certificando que naipe_principal e carta_virada existem
+            naipe_principal = self.trump_suit if self.trump_suit else ""
+            carta_virada = self.trump_card if self.trump_card else ""
+            
             inicio = self.game_start_time.strftime("%Y-%m-%d %H:%M:%S") if self.game_start_time else ""
             fim = self.game_end_time.strftime("%Y-%m-%d %H:%M:%S") if self.game_end_time else ""
-            writer.writerow([modo, jogadores, historico, vencedor_texto, inicio, fim])
+            
+            writer.writerow([modo, jogadores, historico, vencedor_texto, placar, naipe_principal, carta_virada, inicio, fim])
             print(f"[GAME] Dados salvos em {filename}")
 
     def reset_game(self):
