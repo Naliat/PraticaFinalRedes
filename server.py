@@ -5,6 +5,7 @@ import csv
 import time
 from datetime import datetime
 import os
+
 # ------------------------------------------
 # Configuração para Descoberta via UDP
 # ------------------------------------------
@@ -84,6 +85,7 @@ class DouradoGame:
         self.round_condition = threading.Condition(self.lock)
         self.round_result_computed = False
         self.current_turn = 0         # Índice do jogador cuja vez é
+        self.leading_suit = None      # Naipe inicial da rodada
 
     def create_deck(self):
         """Cria o baralho conforme a modalidade."""
@@ -153,7 +155,7 @@ class DouradoGame:
         value_map = {
             '1': '1', '2': '2', '3': '3', '4': '4', '5': '5',
             '6': '6', '7': '7', '8': '8', '9': '9', '10': '10',
-            'Q': 'Dama', 'J': 'Valete', 'K': 'Rei', 'A': 'Ás'
+            'Q': 'Q', 'J': 'J', 'K': 'K', 'A': 'A'
         }
         return f"{value_map.get(value, value)} de {suit}"
 
@@ -171,27 +173,71 @@ class DouradoGame:
         print("[GAME] Mãos distribuídas:")
         print(hands_summary)
 
-    def card_value(self, card):
-        """Define o valor para comparação das cartas."""
-        values = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
-                  '6': 6, '7': 7, '8': 8, '9': 9, '10': 10,
-                  'Q': 11, 'J': 12, 'K': 13, 'A': 14}
-        if card == ('3', 'Espadas'):
-            return 100
-        value, suit = card
-        if suit == self.trump_suit:
-            return 90 + values.get(value, 0)
+    def normal_card_value(self, value):
+        """Retorna o valor numérico base da carta."""
+        values = {
+            'A': 14, 'K': 13, 'Q': 12, 'J': 11,
+            '10': 10, '9': 9, '8': 8, '7': 7,
+            '6': 6, '5': 5, '4': 4, '3': 3,
+            '2': 2, '1': 1
+        }
         return values.get(value, 0)
+
+    def card_value(self, card, leading_suit):
+        """Define o valor para comparação das cartas com base na hierarquia especificada."""
+        value, suit = card
+
+        # Cartas especiais
+        if card == ('3', 'Espadas'):
+            return (16, 0)  # Bebi
+        elif suit == self.trump_suit and value == 'Q':
+            return (15, 0)  # Q do naipe da virada
+        elif suit == self.trump_suit and value == '2':
+            return (14, 0)  # 2 do naipe da virada
+        elif card == ('2', 'Espadas'):
+            return (13, 0)  # 2 de Espadas
+        elif card == ('3', 'Paus'):
+            return (12, 0)  # 3 de Paus
+        elif card == ('A', 'Ouros'):
+            return (11, 0)  # Ás de Ouros
+        elif card == ('2', 'Paus'):
+            return (10, 0)  # 2 de Paus
+        elif card == ('1', 'Paus'):
+            return (9, 0)   # 1 de Paus
+        elif suit == self.trump_suit:
+            # Outras cartas do naipe da virada (trump_suit)
+            if value == 'K':
+                return (8, 13)  # K do trump
+            elif value == 'J':
+                return (7, 11)  # J do trump
+            else:
+                # Para outras cartas do trump, usa o valor normal
+                normal_value = self.normal_card_value(value)
+                return (6, normal_value)
+        elif suit == leading_suit:
+            # Cartas do naipe inicial (leading_suit)
+            if value == 'K':
+                return (5, 13)  # K do leading_suit
+            elif value == 'J':
+                return (4, 11)  # J do leading_suit
+            elif value == 'Q':
+                return (3, 12)  # Q do leading_suit
+            else:
+                normal_value = self.normal_card_value(value)
+                return (2, normal_value)
+        else:
+            # Outras cartas
+            normal_value = self.normal_card_value(value)
+            return (1, normal_value)
 
     def register_move_multiplayer(self, player_index, chosen_card):
         """
         Registra a jogada no modo multiplayer e sincroniza as jogadas.
         Cada jogador só pode jogar quando for sua vez.
         Se for a última jogada da rodada, calcula o resultado, reinicia os controles e notifica os clientes.
-        (O loop do multiplayer permanece inalterado.)
         """
         card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
-        rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
+        rank_map = {'K': 'K', 'Q': 'Q', 'J': 'J'}
         with self.round_condition:
             while player_index != self.current_turn:
                 self.round_condition.wait()
@@ -220,15 +266,22 @@ class DouradoGame:
             print(f"[GAME] {self.player_names[player_index]} jogou {self.format_card(chosen_card_tuple)}")
             if len(self.current_round) == len(self.players):
                 round_moves = [self.current_round[i] for i in range(len(self.players))]
-                round_summary = "Rodada: " + ", ".join([f"{self.player_names[i]}: {self.format_card(round_moves[i])}" 
-                                                       for i in range(len(round_moves))])
-                self.history.append(round_summary)
-                self.broadcast(round_summary)
-                print(f"[GAME] {round_summary}")
-                try:
-                    vencedor = round_moves.index(max(round_moves, key=self.card_value))
-                except Exception:
-                    vencedor = 0
+                # Determinar leading_suit (primeira carta não nula)
+                leading_suit = None
+                for card in round_moves:
+                    if card is not None:
+                        leading_suit = card[1]
+                        break
+                # Calcular valores das cartas
+                card_values = []
+                for card in round_moves:
+                    if card is None:
+                        card_values.append((0, 0))
+                    else:
+                        card_values.append(self.card_value(card, leading_suit))
+                # Encontrar o índice do maior valor
+                max_value = max(card_values)
+                vencedor = card_values.index(max_value)
                 self.montes[vencedor % 2] += 1
                 reason = f"A carta {self.format_card(round_moves[vencedor])} foi a maior."
                 win_msg = f"{self.player_names[vencedor]} venceu a rodada. Motivo: {reason}"
@@ -236,6 +289,7 @@ class DouradoGame:
                 self.broadcast(win_msg)
                 print(f"[GAME] {win_msg}")
                 self.current_round = {}
+                self.leading_suit = None  # Resetar para a próxima rodada
                 self.round_result_computed = False
                 self.current_turn = 0
                 self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
@@ -260,7 +314,7 @@ class DouradoGame:
                 raise ValueError("No modo singleplayer, somente o jogador humano (índice 0) joga manualmente.")
             # Jogada do humano:
             card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
-            rank_map = {'R': 'K', 'D': 'Q', 'V': 'J'}
+            rank_map = {'K': 'K', 'Q': 'Q', 'J': 'J'}
             if chosen_card.lower() == 'auto':
                 if not self.hands[0]:
                     raise ValueError("Sua mão está vazia!")
@@ -297,7 +351,22 @@ class DouradoGame:
             valid_moves = {i: card for i, card in self.current_round.items() if card is not None}
             if not valid_moves:
                 return
-            winner_index = max(valid_moves, key=lambda i: self.card_value(valid_moves[i]))
+            # Determinar leading_suit (primeira carta não nula)
+            leading_suit = None
+            for card in valid_moves.values():
+                if card is not None:
+                    leading_suit = card[1]
+                    break
+            # Calcular valores das cartas
+            card_values = []
+            for card in valid_moves.values():
+                if card is None:
+                    card_values.append((0, 0))
+                else:
+                    card_values.append(self.card_value(card, leading_suit))
+            # Encontrar o índice do maior valor
+            max_value = max(card_values)
+            winner_index = list(valid_moves.keys())[card_values.index(max_value)]
             self.montes[winner_index % 2] += 1
             round_moves_str = ", ".join([f"{self.player_names[i]}: {self.format_card(valid_moves[i])}" 
                                           for i in valid_moves])
@@ -311,6 +380,7 @@ class DouradoGame:
             self.broadcast(win_msg)
             print(f"[GAME] {win_msg}")
             self.current_round = {}
+            self.leading_suit = None  # Resetar para a próxima rodada
             self.current_turn = 0
             self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
             # Se todas as mãos estiverem vazias, encerra a partida
@@ -329,6 +399,7 @@ class DouradoGame:
         print(f"[GAME] {msg_final}")
         self.save_game_data()
         self.finished = True
+
     def save_game_data(self):
         """
         Salva os dados da partida em 'game_data.csv'.

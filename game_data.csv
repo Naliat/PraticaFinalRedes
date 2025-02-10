@@ -14,13 +14,28 @@ Jogador 1: Valete de Espadas, Valete de Ouros, Dama de Paus
 Jogador 2: 3 de Paus, Dama de Espadas, Rei de Copas
 Jogador 3: 3 de Espadas, Dama de Ouros, Rei de Ouros
 Jogador 4: Valete de Copas, Ás de Ouros, Valete de Paus || Rodada: t2: Valete de Ouros, Bot1: Dama de Espadas, Bot2: Dama de Ouros, Bot3: Valete de Copas || Bot3 venceu a rodada. Motivo: A carta Valete de Copas foi a maior. || Rodada: t2: Valete de Espadas, Bot1: Rei de Copas, Bot2: Rei de Ouros, Bot3: Valete de Paus || Bot1 venceu a rodada. Motivo: A carta Rei de Copas foi a maior. || Rodada: t2: Dama de Paus, Bot1: 3 de Paus, Bot2: 3 de Espadas, Bot3: Ás de Ouros || Bot2 venceu a rodada. Motivo: A carta 3 de Espadas foi a maior. || Dupla 2 venceu a partida com placar [1, 2]",Dupla 2,"[1, 2]",Copas,"('Q', 'Copas')",2025-02-09 15:02:35,2025-02-09 15:02:41
-Singleplayer,"t2, Bot1, Bot2, Bot3","Carta virada (Bebi): Dama de Copas || Naipe principal: Copas || Cartas distribuídas:
-Jogador 1: Valete de Espadas, Valete de Ouros, Dama de Paus
-Jogador 2: 3 de Paus, Dama de Espadas, Rei de Copas
-Jogador 3: 3 de Espadas, Dama de Ouros, Rei de Ouros
-Jogador 4: Valete de Copas, Ás de Ouros, Valete de Paus || Rodada: t2: Valete de Ouros, Bot1: Dama de Espadas, Bot2: Dama de Ouros, Bot3: Valete de Copas || Bot3 venceu a rodada. Motivo: A carta Valete de Copas foi a maior. || Rodada: t2: Valete de Espadas, Bot1: Rei de Copas, Bot2: Rei de Ouros, Bot3: Valete de Paus || Bot1 venceu a rodada. Motivo: A carta Rei de Copas foi a maior. || Rodada: t2: Dama de Paus, Bot1: 3 de Paus, Bot2: 3 de Espadas, Bot3: Ás de Ouros || Bot2 venceu a rodada. Motivo: A carta 3 de Espadas foi a maior. || Dupla 2 venceu a partida com placar [1, 2] || Dupla 2 venceu a partida com placar [1, 2]",Dupla 2,"[1, 2]",Copas,"('Q', 'Copas')",2025-02-09 15:02:35,2025-02-09 15:02:41
-Multiplayer,"Tailan, Kao, Rubens, Gustavo","Carta virada (Bebi): Ás de Espadas || Naipe principal: Espadas || Cartas distribuídas:
-Jogador 1: Dama de Paus, Valete de Paus, Rei de Ouros
-Jogador 2: Valete de Ouros, 2 de Espadas, Dama de Espadas
-Jogador 3: 2 de Paus, Ás de Ouros, Rei de Paus
-Jogador 4: Valete de Copas, Ás de Paus, Rei de Espadas || Rodada: Tailan: Valete de Paus, Kao: Dama de Espadas, Rubens: Ás de Ouros, Gustavo: Valete de Copas || Kao venceu a rodada. Motivo: A carta Dama de Espadas foi a maior. || Rodada: Tailan: Dama de Paus, Kao: 2 de Espadas, Rubens: 2 de Paus, Gustavo: Ás de Paus || Kao venceu a rodada. Motivo: A carta 2 de Espadas foi a maior. || Rodada: Tailan: Rei de Ouros, Kao: Valete de Ouros, Rubens: Rei de Paus, Gustavo: Rei de Espadas || Gustavo venceu a rodada. Motivo: A carta Rei de Espadas foi a maior. || Dupla 2 venceu a partida com placar [0, 3]",Dupla 2,"[0, 3]",Espadas,"('A', 'Espadas')",2025-02-09 15:04:17,2025-02-09 15:05:11
+Singleplayer,"Tailan, Bot1, Bot2, Bot3","Carta virada (Bebi): K de Espadas || Naipe principal: Espadas || Cartas distribuídas:
+Jogador 1: Q de Ouros, A de Espadas, 3 de Espadas
+Jogador 2: A de Ouros, K de Copas, J de Ouros
+Jogador 3: Q de Copas, J de Espadas, J de Paus
+Jogador 4: 2 de Espadas, K de Paus, A de Paus || Rodada: Tailan: Q de Ouros, Bot1: J de Ouros, Bot2: J de Paus, Bot3: K de Paus || Bot1 venceu a rodada. Motivo: A carta J de Ouros foi a maior. || Rodada: Tailan: 3 de Espadas, Bot1: A de Ouros, Bot2: Q de Copas, Bot3: 2 de Espadas || Tailan venceu a rodada. Motivo: A carta 3 de Espadas foi a maior. || Rodada: Tailan: A de Espadas, Bot1: K de Copas, Bot2: J de Espadas, Bot3: A de Paus || Bot2 venceu a rodada. Motivo: A carta J de Espadas foi a maior. || Dupla 1 venceu a partida com placar [2, 1]",Dupla 1,"[2, 1]",Espadas,"('K', 'Espadas')",2025-02-10 16:07:21,2025-02-10 16:07:23
+Singleplayer,"Tailan, Bot1, Bot2, Bot3","Carta virada (Bebi): K de Espadas || Naipe principal: Espadas || Cartas distribuídas:
+Jogador 1: Q de Ouros, A de Espadas, 3 de Espadas
+Jogador 2: A de Ouros, K de Copas, J de Ouros
+Jogador 3: Q de Copas, J de Espadas, J de Paus
+Jogador 4: 2 de Espadas, K de Paus, A de Paus || Rodada: Tailan: Q de Ouros, Bot1: J de Ouros, Bot2: J de Paus, Bot3: K de Paus || Bot1 venceu a rodada. Motivo: A carta J de Ouros foi a maior. || Rodada: Tailan: 3 de Espadas, Bot1: A de Ouros, Bot2: Q de Copas, Bot3: 2 de Espadas || Tailan venceu a rodada. Motivo: A carta 3 de Espadas foi a maior. || Rodada: Tailan: A de Espadas, Bot1: K de Copas, Bot2: J de Espadas, Bot3: A de Paus || Bot2 venceu a rodada. Motivo: A carta J de Espadas foi a maior. || Dupla 1 venceu a partida com placar [2, 1] || Dupla 1 venceu a partida com placar [2, 1]",Dupla 1,"[2, 1]",Espadas,"('K', 'Espadas')",2025-02-10 16:07:21,2025-02-10 16:07:23
+Singleplayer,"dcefe, Bot1, Bot2, Bot3","Carta virada (Bebi): Q de Espadas || Naipe principal: Espadas || Cartas distribuídas:
+Jogador 1: 2 de Espadas, Q de Copas, 3 de Paus
+Jogador 2: J de Paus, J de Ouros, K de Copas
+Jogador 3: A de Paus, Q de Ouros, A de Espadas
+Jogador 4: A de Copas, K de Ouros, J de Espadas || Rodada: dcefe: 3 de Paus, Bot1: J de Ouros, Bot2: A de Espadas, Bot3: K de Ouros || dcefe venceu a rodada. Motivo: A carta 3 de Paus foi a maior. || Rodada: dcefe: Q de Copas, Bot1: J de Paus, Bot2: Q de Ouros, Bot3: J de Espadas || Bot3 venceu a rodada. Motivo: A carta J de Espadas foi a maior. || Rodada: dcefe: 2 de Espadas, Bot1: K de Copas, Bot2: A de Paus, Bot3: A de Copas || dcefe venceu a rodada. Motivo: A carta 2 de Espadas foi a maior. || Dupla 1 venceu a partida com placar [2, 1]",Dupla 1,"[2, 1]",Espadas,"('Q', 'Espadas')",2025-02-10 16:11:13,2025-02-10 16:11:20
+Singleplayer,"dcefe, Bot1, Bot2, Bot3","Carta virada (Bebi): Q de Espadas || Naipe principal: Espadas || Cartas distribuídas:
+Jogador 1: 2 de Espadas, Q de Copas, 3 de Paus
+Jogador 2: J de Paus, J de Ouros, K de Copas
+Jogador 3: A de Paus, Q de Ouros, A de Espadas
+Jogador 4: A de Copas, K de Ouros, J de Espadas || Rodada: dcefe: 3 de Paus, Bot1: J de Ouros, Bot2: A de Espadas, Bot3: K de Ouros || dcefe venceu a rodada. Motivo: A carta 3 de Paus foi a maior. || Rodada: dcefe: Q de Copas, Bot1: J de Paus, Bot2: Q de Ouros, Bot3: J de Espadas || Bot3 venceu a rodada. Motivo: A carta J de Espadas foi a maior. || Rodada: dcefe: 2 de Espadas, Bot1: K de Copas, Bot2: A de Paus, Bot3: A de Copas || dcefe venceu a rodada. Motivo: A carta 2 de Espadas foi a maior. || Dupla 1 venceu a partida com placar [2, 1] || Dupla 1 venceu a partida com placar [2, 1]",Dupla 1,"[2, 1]",Espadas,"('Q', 'Espadas')",2025-02-10 16:11:13,2025-02-10 16:11:20
+Multiplayer,"qsqsqsqsqqs, qdqqsqs, xaaxxaax, axaxaxaxax","Carta virada (Bebi): K de Paus || Naipe principal: Paus || Cartas distribuídas:
+Jogador 1: K de Espadas, J de Ouros, J de Copas
+Jogador 2: A de Espadas, Q de Paus, A de Paus
+Jogador 3: Q de Ouros, K de Ouros, 3 de Espadas
+Jogador 4: 2 de Paus, A de Copas, K de Copas || qdqqsqs venceu a rodada. Motivo: A carta A de Paus foi a maior. || qdqqsqs venceu a rodada. Motivo: A carta Q de Paus foi a maior. || xaaxxaax venceu a rodada. Motivo: A carta 3 de Espadas foi a maior. || Dupla 2 venceu a partida com placar [1, 2]",Dupla 2,"[1, 2]",Paus,"('K', 'Paus')",2025-02-10 16:12:00,2025-02-10 16:12:51
