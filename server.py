@@ -205,7 +205,6 @@ class DouradoGame:
         elif card == ('1', 'Paus'):
             return (9, 0)   # 1 de Paus
         elif suit == self.trump_suit:
-            # Outras cartas do naipe da virada (trump_suit)
             if value == 'K':
                 return (8, 13)  # K do trump
             elif value == 'J':
@@ -214,7 +213,6 @@ class DouradoGame:
                 normal_value = self.normal_card_value(value)
                 return (6, normal_value)
         elif suit == leading_suit:
-            # Cartas do naipe inicial (leading_suit)
             if value == 'K':
                 return (5, 13)  # K do leading_suit
             elif value == 'J':
@@ -286,7 +284,7 @@ class DouradoGame:
                 self.broadcast(win_msg)
                 print(f"[GAME] {win_msg}")
                 self.current_round = {}
-                self.leading_suit = None
+                self.leading_suit = None  # Resetar para a próxima rodada
                 self.round_result_computed = False
                 self.current_turn = 0
                 self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
@@ -309,6 +307,7 @@ class DouradoGame:
         else:
             if player_index != 0:
                 raise ValueError("No modo singleplayer, somente o jogador humano (índice 0) joga manualmente.")
+            # Jogada do humano:
             card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
             rank_map = {'K': 'K', 'Q': 'Q', 'J': 'J'}
             if chosen_card.lower() == 'auto':
@@ -334,6 +333,7 @@ class DouradoGame:
             self.current_round[0] = human_card
             self.broadcast(f"{self.player_names[0]} jogou {self.format_card(human_card)}")
             print(f"[GAME] {self.player_names[0]} jogou {self.format_card(human_card)}")
+            # Simula as jogadas dos bots (índices 1, 2 e 3)
             for ai_index in range(1, len(self.players)):
                 if self.hands[ai_index]:
                     ai_card = random.choice(self.hands[ai_index])
@@ -346,11 +346,13 @@ class DouradoGame:
             valid_moves = {i: card for i, card in self.current_round.items() if card is not None}
             if not valid_moves:
                 return
+            # Determinar leading_suit (primeira carta não nula)
             leading_suit = None
             for card in valid_moves.values():
                 if card is not None:
                     leading_suit = card[1]
                     break
+            # Calcular valores das cartas
             card_values = []
             for card in valid_moves.values():
                 if card is None:
@@ -372,16 +374,22 @@ class DouradoGame:
             self.broadcast(win_msg)
             print(f"[GAME] {win_msg}")
             self.current_round = {}
-            self.leading_suit = None
+            self.leading_suit = None  # Resetar para a próxima rodada
             self.current_turn = 0
             self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
             if all(len(hand) == 0 for hand in self.hands):
                 self.end_game()
 
-    def end_game(self):
-        """Finaliza a partida, mostra a dupla vencedora, atualiza ranking e salva os dados em CSV."""
+    def end_game(self, winner_team_override=None):
+        """
+        Finaliza a partida, mostra a dupla vencedora, atualiza ranking e salva os dados em CSV.
+        Se winner_team_override for informado, esse valor será usado como dupla vencedora.
+        """
         self.game_end_time = datetime.now()
-        winner_team = 1 if self.montes[0] > self.montes[1] else 2
+        if winner_team_override is not None:
+            winner_team = winner_team_override
+        else:
+            winner_team = 1 if self.montes[0] > self.montes[1] else 2
         final_msg = f"Dupla {winner_team} venceu a partida com placar {self.montes}"
         self.history.append(final_msg)
         atualizar_ranking(self, winner_team)
@@ -446,13 +454,13 @@ class DouradoGame:
 game_rooms = {}  # {room_id: {"game": DouradoGame, "clients": [socket, ...]}}
 room_lock = threading.Lock()
 
-def assign_room(client_socket, player_name, singleplayer_choice, modalidade):
+def assign_room(client_socket, player_name, singleplayer_choice):
     global game_rooms
     with room_lock:
         if singleplayer_choice:
             # Cria uma sala exclusiva para o jogador e adiciona 3 bots
             room_id = f"SP_{player_name}_{int(time.time())}"
-            new_game = DouradoGame(mode=modalidade, singleplayer=True)
+            new_game = DouradoGame(mode=20, singleplayer=True)
             new_game.player_names.append(player_name)
             new_game.players.append(client_socket)
             # Adiciona bots (todos usarão o mesmo socket para broadcast)
@@ -463,11 +471,9 @@ def assign_room(client_socket, player_name, singleplayer_choice, modalidade):
             print(f"[ROOM] Sala {room_id} criada para singleplayer com bots: {new_game.player_names}")
             return room_id, new_game
         else:
-            # Procura uma sala multiplayer que ainda não esteja completa e cuja modalidade seja igual
+            # Procura uma sala multiplayer que ainda não esteja completa
             for room_id, room in game_rooms.items():
-                if (not room["game"].singleplayer and 
-                    room["game"].mode == modalidade and 
-                    len(room["clients"]) < 4):
+                if not room["game"].singleplayer and len(room["clients"]) < 4:
                     room["clients"].append(client_socket)
                     room["game"].player_names.append(player_name)
                     room["game"].players.append(client_socket)
@@ -475,7 +481,7 @@ def assign_room(client_socket, player_name, singleplayer_choice, modalidade):
                     return room_id, room["game"]
             # Se nenhuma sala disponível, cria uma nova
             room_id = f"M_{len(game_rooms)+1}"
-            new_game = DouradoGame(mode=modalidade, singleplayer=False)
+            new_game = DouradoGame(mode=20, singleplayer=False)
             new_game.player_names.append(player_name)
             new_game.players.append(client_socket)
             game_rooms[room_id] = {"game": new_game, "clients": [client_socket]}
@@ -489,10 +495,30 @@ def send_message(clients, message):
         except Exception as e:
             print(f"Erro ao enviar mensagem: {e}")
 
+def handle_disconnect(game, player_name):
+    """
+    Trata a desconexão de um jogador em partida multiplayer.
+    A dupla adversária será declarada vencedora.
+    """
+    with game.lock:
+        if game.finished:
+            return
+        try:
+            idx = game.player_names.index(player_name)
+        except ValueError:
+            return
+        # Se o jogador que saiu estiver nos índices 0 ou 2, sua dupla é considerada incompleta e a dupla 2 vence;
+        # caso contrário, vence a dupla 1.
+        winning_team = 2 if idx % 2 == 0 else 1
+        game.broadcast(f"O jogador {player_name} desistiu. A partida será encerrada. Dupla {winning_team} vence.\n")
+        game.end_game(winner_team_override=winning_team)
+
 # ------------------------------------------
 # Função para lidar com cada cliente
 # ------------------------------------------
 def handle_client(client_socket):
+    game = None
+    player_name = ""
     try:
         client_socket.send("Digite seu nome: ".encode())
         player_name = client_socket.recv(1024).decode().strip()
@@ -518,7 +544,8 @@ def handle_client(client_socket):
             client_socket.send("Modalidade inválida. Encerrando conexão.\n".encode())
             return
         
-        room_id, game = assign_room(client_socket, player_name, singleplayer_choice, modalidade)
+        # Para este exemplo, tanto no single quanto no multiplayer, usamos a modalidade 20 (pode ser adaptado conforme necessidade)
+        room_id, game = assign_room(client_socket, player_name, singleplayer_choice)
         client_socket.send(f"Você foi atribuído à sala {room_id}.\n".encode())
         print(f"[SERVER] Jogador {player_name} atribuído à sala {room_id}.")
         
@@ -563,6 +590,7 @@ def handle_client(client_socket):
                         "5. Sair\n"
                         "Digite sua opção: ")
             
+            # Envia o menu somente para o jogador cuja vez é
             if idx == game.current_turn:
                 client_socket.send(menu.encode())
             else:
@@ -627,7 +655,10 @@ def handle_client(client_socket):
                     ranking_msg = obter_ranking_formatado()
                     client_socket.send((ranking_msg + "\n").encode())
                 elif opcao == 5:
+                    # Se for multiplayer, ao sair, encerra a partida dando vitória à dupla adversária
                     client_socket.send("Saindo...\n".encode())
+                    if not game.singleplayer and not game.finished:
+                        handle_disconnect(game, player_name)
                     break
                 else:
                     client_socket.send("Opção inválida!\n".encode())
@@ -639,6 +670,9 @@ def handle_client(client_socket):
         print(f"[SERVER] Cliente {player_name} desconectado.")
     except Exception as e:
         print(f"Erro no handle_client: {str(e)}")
+        # Em caso de erro durante uma partida multiplayer, encerra a partida se ainda não estiver finalizada.
+        if game is not None and not game.singleplayer and not game.finished:
+            handle_disconnect(game, player_name)
     finally:
         client_socket.close()
 
