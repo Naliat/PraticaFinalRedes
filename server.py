@@ -211,7 +211,6 @@ class DouradoGame:
             elif value == 'J':
                 return (7, 11)  # J do trump
             else:
-                # Para outras cartas do trump, usa o valor normal
                 normal_value = self.normal_card_value(value)
                 return (6, normal_value)
         elif suit == leading_suit:
@@ -226,7 +225,6 @@ class DouradoGame:
                 normal_value = self.normal_card_value(value)
                 return (2, normal_value)
         else:
-            # Outras cartas
             normal_value = self.normal_card_value(value)
             return (1, normal_value)
 
@@ -279,7 +277,6 @@ class DouradoGame:
                         card_values.append((0, 0))
                     else:
                         card_values.append(self.card_value(card, leading_suit))
-                # Encontrar o índice do maior valor
                 max_value = max(card_values)
                 vencedor = card_values.index(max_value)
                 self.montes[vencedor % 2] += 1
@@ -289,7 +286,7 @@ class DouradoGame:
                 self.broadcast(win_msg)
                 print(f"[GAME] {win_msg}")
                 self.current_round = {}
-                self.leading_suit = None  # Resetar para a próxima rodada
+                self.leading_suit = None
                 self.round_result_computed = False
                 self.current_turn = 0
                 self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
@@ -312,7 +309,6 @@ class DouradoGame:
         else:
             if player_index != 0:
                 raise ValueError("No modo singleplayer, somente o jogador humano (índice 0) joga manualmente.")
-            # Jogada do humano:
             card_map = {'E': 'Espadas', 'O': 'Ouros', 'C': 'Copas', 'P': 'Paus'}
             rank_map = {'K': 'K', 'Q': 'Q', 'J': 'J'}
             if chosen_card.lower() == 'auto':
@@ -338,7 +334,6 @@ class DouradoGame:
             self.current_round[0] = human_card
             self.broadcast(f"{self.player_names[0]} jogou {self.format_card(human_card)}")
             print(f"[GAME] {self.player_names[0]} jogou {self.format_card(human_card)}")
-            # Simula as jogadas dos bots (índices 1, 2 e 3)
             for ai_index in range(1, len(self.players)):
                 if self.hands[ai_index]:
                     ai_card = random.choice(self.hands[ai_index])
@@ -351,20 +346,17 @@ class DouradoGame:
             valid_moves = {i: card for i, card in self.current_round.items() if card is not None}
             if not valid_moves:
                 return
-            # Determinar leading_suit (primeira carta não nula)
             leading_suit = None
             for card in valid_moves.values():
                 if card is not None:
                     leading_suit = card[1]
                     break
-            # Calcular valores das cartas
             card_values = []
             for card in valid_moves.values():
                 if card is None:
                     card_values.append((0, 0))
                 else:
                     card_values.append(self.card_value(card, leading_suit))
-            # Encontrar o índice do maior valor
             max_value = max(card_values)
             winner_index = list(valid_moves.keys())[card_values.index(max_value)]
             self.montes[winner_index % 2] += 1
@@ -380,10 +372,9 @@ class DouradoGame:
             self.broadcast(win_msg)
             print(f"[GAME] {win_msg}")
             self.current_round = {}
-            self.leading_suit = None  # Resetar para a próxima rodada
+            self.leading_suit = None
             self.current_turn = 0
             self.broadcast(f"Nova rodada iniciada. Agora é a vez de: {self.player_names[0]}")
-            # Se todas as mãos estiverem vazias, encerra a partida
             if all(len(hand) == 0 for hand in self.hands):
                 self.end_game()
 
@@ -422,7 +413,6 @@ class DouradoGame:
             vencedor_texto = "Dupla 1" if self.montes[0] > self.montes[1] else "Dupla 2"
             placar = f"[{self.montes[0]}, {self.montes[1]}]"
             
-            # Certificando que naipe_principal e carta_virada existem
             naipe_principal = self.trump_suit if self.trump_suit else ""
             carta_virada = self.trump_card if self.trump_card else ""
             
@@ -456,13 +446,13 @@ class DouradoGame:
 game_rooms = {}  # {room_id: {"game": DouradoGame, "clients": [socket, ...]}}
 room_lock = threading.Lock()
 
-def assign_room(client_socket, player_name, singleplayer_choice):
+def assign_room(client_socket, player_name, singleplayer_choice, modalidade):
     global game_rooms
     with room_lock:
         if singleplayer_choice:
             # Cria uma sala exclusiva para o jogador e adiciona 3 bots
             room_id = f"SP_{player_name}_{int(time.time())}"
-            new_game = DouradoGame(mode=20, singleplayer=True)
+            new_game = DouradoGame(mode=modalidade, singleplayer=True)
             new_game.player_names.append(player_name)
             new_game.players.append(client_socket)
             # Adiciona bots (todos usarão o mesmo socket para broadcast)
@@ -473,9 +463,11 @@ def assign_room(client_socket, player_name, singleplayer_choice):
             print(f"[ROOM] Sala {room_id} criada para singleplayer com bots: {new_game.player_names}")
             return room_id, new_game
         else:
-            # Procura uma sala multiplayer que ainda não esteja completa
+            # Procura uma sala multiplayer que ainda não esteja completa e cuja modalidade seja igual
             for room_id, room in game_rooms.items():
-                if not room["game"].singleplayer and len(room["clients"]) < 4:
+                if (not room["game"].singleplayer and 
+                    room["game"].mode == modalidade and 
+                    len(room["clients"]) < 4):
                     room["clients"].append(client_socket)
                     room["game"].player_names.append(player_name)
                     room["game"].players.append(client_socket)
@@ -483,7 +475,7 @@ def assign_room(client_socket, player_name, singleplayer_choice):
                     return room_id, room["game"]
             # Se nenhuma sala disponível, cria uma nova
             room_id = f"M_{len(game_rooms)+1}"
-            new_game = DouradoGame(mode=20, singleplayer=False)
+            new_game = DouradoGame(mode=modalidade, singleplayer=False)
             new_game.player_names.append(player_name)
             new_game.players.append(client_socket)
             game_rooms[room_id] = {"game": new_game, "clients": [client_socket]}
@@ -526,7 +518,7 @@ def handle_client(client_socket):
             client_socket.send("Modalidade inválida. Encerrando conexão.\n".encode())
             return
         
-        room_id, game = assign_room(client_socket, player_name, singleplayer_choice)
+        room_id, game = assign_room(client_socket, player_name, singleplayer_choice, modalidade)
         client_socket.send(f"Você foi atribuído à sala {room_id}.\n".encode())
         print(f"[SERVER] Jogador {player_name} atribuído à sala {room_id}.")
         
@@ -571,12 +563,10 @@ def handle_client(client_socket):
                         "5. Sair\n"
                         "Digite sua opção: ")
             
-            # Envia o menu somente para o jogador cuja vez é
             if idx == game.current_turn:
                 client_socket.send(menu.encode())
             else:
                 client_socket.send(f"Agora é a vez de: {game.player_names[game.current_turn]}\n".encode())
-                # Lê o input para evitar bloqueio, mas ignora-o
                 _ = client_socket.recv(1024).decode().strip()
                 client_socket.send("Aguarde, não é sua vez.\n".encode())
                 continue
