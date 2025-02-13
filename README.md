@@ -29,6 +29,9 @@ Naipes, Espadas, Ouros, Paus e Copas
 
 ![image](https://github.com/user-attachments/assets/3f7b0ec3-a840-4bc5-aa8d-8bc124a09ec9)
 
+![image](https://github.com/user-attachments/assets/fdcd3fcb-af81-4493-b3c8-6ae3a1cb0507)
+
+
 
 
 
