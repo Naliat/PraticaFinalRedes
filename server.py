@@ -14,6 +14,20 @@ TCP_PORT = 12345       # Porta do servidor TCP
 BROADCAST_MSG = "DISCOVER_SERVER"
 RESPONSE_MSG = f"SERVER_FOUND:{TCP_PORT}"
 
+def get_local_ip():
+    """
+    Obtém o endereço IP local da máquina.
+    """
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    return local_ip
+
+# Obtém o IP local e armazena em uma variável
+LOCAL_IP = get_local_ip()
+
+# Exibe o IP local no terminal
+print(f"[INFO] IP local do servidor: {LOCAL_IP}")
+
 def udp_discovery():
     """
     Aguarda requisições UDP de descoberta e responde com as informações do servidor.
@@ -454,13 +468,13 @@ class DouradoGame:
 game_rooms = {}  # {room_id: {"game": DouradoGame, "clients": [socket, ...]}}
 room_lock = threading.Lock()
 
-def assign_room(client_socket, player_name, singleplayer_choice):
+def assign_room(client_socket, player_name, singleplayer_choice, modalidade):
     global game_rooms
     with room_lock:
         if singleplayer_choice:
             # Cria uma sala exclusiva para o jogador e adiciona 3 bots
             room_id = f"SP_{player_name}_{int(time.time())}"
-            new_game = DouradoGame(mode=20, singleplayer=True)
+            new_game = DouradoGame(mode=modalidade, singleplayer=True)
             new_game.player_names.append(player_name)
             new_game.players.append(client_socket)
             # Adiciona bots (todos usarão o mesmo socket para broadcast)
@@ -473,7 +487,7 @@ def assign_room(client_socket, player_name, singleplayer_choice):
         else:
             # Procura uma sala multiplayer que ainda não esteja completa
             for room_id, room in game_rooms.items():
-                if not room["game"].singleplayer and len(room["clients"]) < 4:
+                if not room["game"].singleplayer and len(room["clients"]) < 4 and room["game"].mode == modalidade:
                     room["clients"].append(client_socket)
                     room["game"].player_names.append(player_name)
                     room["game"].players.append(client_socket)
@@ -481,7 +495,7 @@ def assign_room(client_socket, player_name, singleplayer_choice):
                     return room_id, room["game"]
             # Se nenhuma sala disponível, cria uma nova
             room_id = f"M_{len(game_rooms)+1}"
-            new_game = DouradoGame(mode=20, singleplayer=False)
+            new_game = DouradoGame(mode=modalidade, singleplayer=False)
             new_game.player_names.append(player_name)
             new_game.players.append(client_socket)
             game_rooms[room_id] = {"game": new_game, "clients": [client_socket]}
@@ -544,8 +558,7 @@ def handle_client(client_socket):
             client_socket.send("Modalidade inválida. Encerrando conexão.\n".encode())
             return
         
-        # Para este exemplo, tanto no single quanto no multiplayer, usamos a modalidade 20 (pode ser adaptado conforme necessidade)
-        room_id, game = assign_room(client_socket, player_name, singleplayer_choice)
+        room_id, game = assign_room(client_socket, player_name, singleplayer_choice, modalidade)
         client_socket.send(f"Você foi atribuído à sala {room_id}.\n".encode())
         print(f"[SERVER] Jogador {player_name} atribuído à sala {room_id}.")
         
