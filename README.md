@@ -27,6 +27,12 @@ Naipes, Espadas, Ouros, Paus e Copas
 ![image](https://github.com/user-attachments/assets/40794ddf-64d3-4040-a6a1-1669186ae762)
 ### Logo isso seria o final do jogo com os logs bem elabadoros 
 
+![image](https://github.com/user-attachments/assets/3f7b0ec3-a840-4bc5-aa8d-8bc124a09ec9)
+
+
+
+
+
 ### Arquivo CSV do GitHub com cabeçalhos que salvam o nome, dupla, naipe, carta da virada horario de inicio e fim e dentro outras coisas.
 
 
