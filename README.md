@@ -21,8 +21,13 @@ Naipes, Espadas, Ouros, Paus e Copas
 ### Dado que a partida inicia no modo solo, você e 3 bots, você tem acesso a esse menu no inicio com algumas opções, dado a 1 opção, ela funciona da sequinte maneira, segue a imagem abaixo.
 ![image](https://github.com/user-attachments/assets/f561f3ae-8f94-47f3-a0fc-2870ad29ed69)
 ### Nesse sentido, você tem essas opções a 1, você escolher uma carta do seu escopo/mão, e funciona assim dado que você tem 3 de Espadas, 2 de Ouros e A de Ouros e quer jogar "3 de Espadas", você digita a carta em si, no caso "3", e a inicial do naipe, nesse caso "O" de ouros.
-### As demais funcionalidades como ver historico, que seria mostrar o que ja aconteceu na partida, ver mão quer é mostrar as duas cartas, jogar automaticamente que seria pegar uma carta do seu escopo e jogar automaticamente, alem de puder sair do jogo
+### As demais funcionalidades como ver historico, que seria mostrar o que ja aconteceu na partida, ver mão quer é mostrar as duas cartas, jogar automaticamente que seria pegar uma carta do seu escopo e jogar automaticamente, alem de puder sair do jogo e mostrar o Ranking, que é guardado em um dicionario e é incremetado e atualizado dado as partidas terminadas, quando o servidor é fechado o ranking reinicia, mais todo o historico, mesmo que o server seja fechado é salvo no CSV.
+
 
 ![image](https://github.com/user-attachments/assets/40794ddf-64d3-4040-a6a1-1669186ae762)
+### Logo isso seria o final do jogo com os logs bem elabadoros 
+
+### Arquivo CSV do GitHub com cabeçalhos que salvam o nome, dupla, naipe, carta da virada horario de inicio e fim e dentro outras coisas.
+
 
 
